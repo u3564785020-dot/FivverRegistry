@@ -311,47 +311,44 @@ class FiverrRegistrator:
                 # Теперь находим родительский элемент (кнопку/div) и кликаем на него
                 logger.info("Поиск родительской кнопки для клика...")
                 
-                # Получаем элемент параграфа и его родителя через JavaScript
-                parent_element = await self.page.evaluate('''
-                    () => {
-                        const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
-                        if (!p) return null;
-                        
-                        // Ищем ближайший родительский элемент который можно кликнуть
-                        let parent = p.parentElement;
-                        while (parent) {
-                            const tag = parent.tagName.toLowerCase();
-                            if (tag === 'button' || tag === 'div' || tag === 'a') {
-                                return parent.outerHTML.substring(0, 200); // Для логирования
-                            }
-                            parent = parent.parentElement;
-                        }
-                        return null;
-                    }
-                ''')
-                
-                if parent_element:
-                    logger.info(f"✅ Родительский элемент найден: {parent_element[:100]}...")
-                else:
-                    logger.warning("⚠️ Родительский элемент не найден через JS")
-                
-                # Кликаем через JavaScript на родительский элемент
-                logger.info("Клик на кнопку через JavaScript...")
+                # Кликаем через JavaScript - ищем КЛИКАБЕЛЬНЫЙ родительский элемент
+                logger.info("Клик на кнопку через JavaScript (ищем role=button или button tag)...")
                 clicked = await self.page.evaluate('''
                     () => {
                         const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
-                        if (!p) return false;
+                        if (!p) {
+                            console.log('Параграф не найден');
+                            return false;
+                        }
                         
-                        // Ищем ближайший родительский элемент который можно кликнуть
-                        let parent = p.parentElement;
-                        while (parent) {
-                            const tag = parent.tagName.toLowerCase();
-                            if (tag === 'button' || tag === 'div' || tag === 'a') {
+                        // Ищем ближайший родительский элемент с role="button" или тег button
+                        let parent = p.closest('[role="button"], button, a[href]');
+                        
+                        if (parent) {
+                            console.log('Найден кликабельный элемент:', parent.tagName, parent.getAttribute('role'));
+                            parent.click();
+                            return true;
+                        }
+                        
+                        // Если не нашли - пробуем найти div с onclick или cursor pointer
+                        parent = p.parentElement;
+                        let depth = 0;
+                        while (parent && depth < 10) {
+                            const style = window.getComputedStyle(parent);
+                            const hasOnClick = parent.onclick !== null || parent.getAttribute('onclick');
+                            const isClickable = style.cursor === 'pointer' || hasOnClick;
+                            
+                            if (isClickable) {
+                                console.log('Найден кликабельный div:', parent.className);
                                 parent.click();
                                 return true;
                             }
+                            
                             parent = parent.parentElement;
+                            depth++;
                         }
+                        
+                        console.log('Кликабельный элемент не найден');
                         return false;
                     }
                 ''')
