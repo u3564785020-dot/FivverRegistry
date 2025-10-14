@@ -582,26 +582,46 @@ class FiverrRegistrator:
                 
                 if submit_clicked:
                     logger.info("✅ Кликнули на кнопку Submit!")
-                    
-                    # URL НЕ МЕНЯЕТСЯ - это модальное окно! Просто ждем обновления контента
                     await self._wait_random(3, 4)
                     
-                    # Ждем пока ИСЧЕЗНУТ старые поля email/password (модальное окно обновится)
+                    # АНАЛИЗИРУЕМ что произошло после клика
                     try:
-                        logger.info("Ожидание обновления модального окна...")
-                        await self.page.wait_for_selector('input#identification-password', state='hidden', timeout=10000)
-                        logger.info("✅ Старая форма исчезла, модальное окно обновилось")
-                    except:
-                        logger.warning("⚠️ Старая форма не исчезла, возможно ошибка валидации")
-                        # Проверяем наличие ошибок
-                        try:
-                            page_text = await self.page.evaluate('() => document.body.innerText')
-                            if any(keyword in page_text.lower() for keyword in ['invalid', 'error', 'errore', 'incorrect']):
-                                logger.error(f"❌ Обнаружена ошибка валидации! Текст: {page_text[:500]}")
-                                await self.email_service.cancel_email(activation_id)
-                                return None
-                        except:
-                            pass
+                        # Проверяем есть ли ещё поля email/password
+                        email_field_exists = await self.page.query_selector('input#identification-usernameOrEmail')
+                        password_field_exists = await self.page.query_selector('input#identification-password')
+                        
+                        if email_field_exists and password_field_exists:
+                            logger.error("❌ ФОРМА НЕ ОТПРАВИЛАСЬ! Поля email/password всё ещё на месте!")
+                            
+                            # Логируем HTML модального окна для анализа
+                            modal_html = await self.page.evaluate('''
+                                () => {
+                                    // Ищем модальное окно
+                                    const modal = document.querySelector('[role="dialog"]') || 
+                                                  document.querySelector('.modal') ||
+                                                  document.querySelector('[data-track-tag="modal"]');
+                                    
+                                    return modal ? modal.innerHTML : 'Модальное окно не найдено';
+                                }
+                            ''')
+                            logger.error(f"HTML модального окна (первые 2000 символов): {modal_html[:2000]}")
+                            
+                            # Проверяем текст ошибок
+                            modal_text = await self.page.evaluate('''
+                                () => {
+                                    const modal = document.querySelector('[role="dialog"]') || 
+                                                  document.querySelector('.modal');
+                                    return modal ? modal.innerText : document.body.innerText;
+                                }
+                            ''')
+                            logger.error(f"Текст модального окна: {modal_text[:1000]}")
+                            
+                            await self.email_service.cancel_email(activation_id)
+                            return None
+                        else:
+                            logger.info("✅ Старая форма исчезла, модальное окно обновилось!")
+                    except Exception as e:
+                        logger.error(f"Ошибка при анализе модального окна: {e}")
                     
                     await self._wait_random(2, 3)
                 else:
