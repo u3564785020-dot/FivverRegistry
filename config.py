@@ -22,7 +22,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_IDS = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
 
 # MongoDB Configuration
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+# Railway автоматически создает MONGO_URL, используем её если MONGODB_URI не установлена
+MONGODB_URI = os.getenv("MONGODB_URI") or os.getenv("MONGO_URL", "mongodb://localhost:27017")
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "fiverr_bot")
 
 # Email API Configuration
