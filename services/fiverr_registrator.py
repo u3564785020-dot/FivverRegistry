@@ -556,29 +556,44 @@ class FiverrRegistrator:
                 return None
             
             # ШАГ 5: Нажимаем "Continua" (submit button)
-            logger.info("Отправка формы email/password через Enter...")
+            logger.info("Отправка формы через JavaScript form.submit()...")
             try:
-                # ОТПРАВЛЯЕМ ФОРМУ ЧЕРЕЗ ENTER (не клик на кнопку - она не работает!)
-                password_field = await self.page.query_selector('input#identification-password')
-                if password_field:
-                    logger.info("✅ Нажимаем Enter в поле password для отправки формы...")
-                    await password_field.press('Enter')
-                    await self._wait_random(5, 7)
+                # Отправляем форму напрямую через JavaScript (Enter и клики не работают!)
+                form_submitted = await self.page.evaluate('''
+                    async () => {
+                        const form = document.querySelector('form');
+                        if (form) {
+                            // Триггерим событие submit
+                            const submitEvent = new Event('submit', {
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            form.dispatchEvent(submitEvent);
+                            
+                            // Если форма не отправилась - делаем submit напрямую
+                            if (form.checkValidity()) {
+                                form.submit();
+                                return true;
+                            }
+                            return false;
+                        }
+                        return false;
+                    }
+                ''')
+                
+                if form_submitted:
+                    logger.info("✅ Форма отправлена через JavaScript!")
+                    await self._wait_random(6, 8)
                 else:
-                    logger.error("❌ Поле password не найдено!")
+                    logger.error("❌ Форма не валидна или не найдена!")
+                    # Логируем текст страницы для диагностики
+                    try:
+                        page_text = await self.page.evaluate('() => document.body.innerText')
+                        logger.error(f"Текст страницы: {page_text[:500]}")
+                    except:
+                        pass
                     await self.email_service.cancel_email(activation_id)
                     return None
-                
-                # Проверяем есть ли ошибки валидации
-                try:
-                    page_text = await self.page.evaluate('() => document.body.innerText')
-                    error_keywords = ['error', 'invalid', 'incorrect', 'wrong', 'errore', 'non valido', 'sbagliato']
-                    has_error = any(keyword in page_text.lower() for keyword in error_keywords)
-                    
-                    if has_error:
-                        logger.error(f"⚠️ Обнаружена ошибка на странице! Текст: {page_text[:300]}")
-                except:
-                    pass
                     
             except Exception as e:
                 logger.error(f"Ошибка отправки формы: {e}")
