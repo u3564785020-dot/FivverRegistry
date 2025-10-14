@@ -310,56 +310,82 @@ class FiverrRegistrator:
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # ШАГ 3: Нажимаем на кнопку "Continue with email"
-            logger.info("Поиск кнопки 'Continue with email'...")
+            # ШАГ 3: АНАЛИЗИРУЕМ страницу /join и ищем кнопку email
+            logger.info("АНАЛИЗ страницы /join...")
             try:
-                # ИЩЕМ иконку конверта (envelope_icon) - это УНИВЕРСАЛЬНЫЙ идентификатор!
-                logger.info("Ожидание появления иконки конверта...")
-                await self.page.wait_for_selector('svg[data-track-tag="envelope_icon"]', state='visible', timeout=15000)
-                logger.info("✅ Иконка конверта найдена")
+                # Ждем загрузки кнопок (любых)
+                await self._wait_random(3, 5)
                 
-                # Кликаем на родительскую кнопку
-                logger.info("Клик на родительскую кнопку через JavaScript...")
+                # ЛОГИРУЕМ ВСЕ КНОПКИ на странице
+                buttons_info = await self.page.evaluate('''
+                    () => {
+                        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+                        
+                        return buttons.map((btn, index) => {
+                            // Получаем текст кнопки
+                            const text = btn.innerText || btn.textContent || '';
+                            
+                            // Получаем HTML (первые 300 символов)
+                            const html = btn.outerHTML.substring(0, 300);
+                            
+                            // Проверяем наличие SVG
+                            const hasSvg = btn.querySelector('svg') ? true : false;
+                            const svgTag = btn.querySelector('svg') ? btn.querySelector('svg').getAttribute('data-track-tag') : null;
+                            
+                            return {
+                                index: index,
+                                text: text.substring(0, 100),
+                                hasSvg: hasSvg,
+                                svgTag: svgTag,
+                                html: html
+                            };
+                        });
+                    }
+                ''')
+                
+                logger.info(f"📊 НАЙДЕНО КНОПОК: {len(buttons_info)}")
+                for btn in buttons_info:
+                    logger.info(f"  Кнопка #{btn['index']}: text='{btn['text']}', svg={btn['hasSvg']}, svgTag={btn['svgTag']}")
+                    logger.info(f"    HTML: {btn['html']}")
+                
+                # ИЩЕМ кнопку с email (по разным признакам)
+                logger.info("Поиск кнопки с признаками 'email'...")
                 clicked = await self.page.evaluate('''
                     () => {
-                        // Находим SVG с envelope_icon
-                        const svg = document.querySelector('svg[data-track-tag="envelope_icon"]');
+                        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
                         
-                        if (!svg) {
-                            console.error('SVG не найден!');
-                            return false;
-                        }
-                        
-                        console.log('SVG найден:', svg);
-                        
-                        // Ищем родительскую кнопку (поднимаемся вверх по DOM)
-                        let parent = svg.parentElement;
-                        let depth = 0;
-                        
-                        while (parent && depth < 10) {
-                            console.log('Проверяем родителя:', parent.tagName, parent.getAttribute('role'));
+                        for (const btn of buttons) {
+                            const text = (btn.innerText || btn.textContent || '').toLowerCase();
+                            const html = btn.outerHTML.toLowerCase();
                             
-                            if (parent.tagName === 'BUTTON' || parent.getAttribute('role') === 'button') {
-                                console.log('Найдена кнопка! Кликаем...');
-                                parent.click();
+                            // Проверяем ЛЮБЫЕ признаки email:
+                            // 1. Текст содержит "email"
+                            // 2. HTML содержит "email"
+                            // 3. SVG с envelope/mail
+                            // 4. НЕ содержит "google", "apple", "facebook"
+                            
+                            if (
+                                (text.includes('email') || html.includes('email') || 
+                                 html.includes('envelope') || html.includes('mail')) &&
+                                !text.includes('google') && !text.includes('apple') && !text.includes('facebook')
+                            ) {
+                                console.log('✅ НАЙДЕНА кнопка email:', text);
+                                btn.click();
                                 return true;
                             }
-                            
-                            parent = parent.parentElement;
-                            depth++;
                         }
                         
-                        console.error('Кнопка не найдена в родителях SVG');
+                        console.error('❌ Кнопка email не найдена');
                         return false;
                     }
                 ''')
                 
                 if not clicked:
-                    logger.error("❌ Не удалось кликнуть на родительскую кнопку")
+                    logger.error("❌ Кнопка email не найдена на странице!")
                     await self.email_service.cancel_email(activation_id)
                     return None
                 
-                logger.info("✅ Кликнули на кнопку")
+                logger.info("✅ Кликнули на кнопку email")
                 
                 # ВАЖНО: Форма открывается в модальном окне (URL НЕ меняется!)
                 # Даем время на анимацию открытия модального окна
