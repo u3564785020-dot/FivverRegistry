@@ -313,41 +313,53 @@ class FiverrRegistrator:
             # ШАГ 3: Нажимаем на кнопку "Continue with email"
             logger.info("Поиск кнопки 'Continue with email'...")
             try:
-                # ИЩЕМ кнопку с иконкой конверта (envelope_icon)
-                logger.info("Ожидание появления кнопки 'Continue with email'...")
-                await self.page.wait_for_selector('button[role="button"] svg[data-track-tag="envelope_icon"]', state='visible', timeout=15000)
-                logger.info("✅ Кнопка 'Continue with email' найдена")
+                # ИЩЕМ иконку конверта (envelope_icon) - это УНИВЕРСАЛЬНЫЙ идентификатор!
+                logger.info("Ожидание появления иконки конверта...")
+                await self.page.wait_for_selector('svg[data-track-tag="envelope_icon"]', state='visible', timeout=15000)
+                logger.info("✅ Иконка конверта найдена")
                 
-                # Кликаем на кнопку с иконкой конверта
-                logger.info("Клик на кнопку 'Continue with email' через JavaScript...")
+                # Кликаем на родительскую кнопку
+                logger.info("Клик на родительскую кнопку через JavaScript...")
                 clicked = await self.page.evaluate('''
                     () => {
                         // Находим SVG с envelope_icon
                         const svg = document.querySelector('svg[data-track-tag="envelope_icon"]');
                         
-                        if (svg) {
-                            // Ищем родительскую кнопку
-                            let parent = svg.parentElement;
-                            while (parent && parent.tagName !== 'BUTTON') {
-                                parent = parent.parentElement;
-                            }
+                        if (!svg) {
+                            console.error('SVG не найден!');
+                            return false;
+                        }
+                        
+                        console.log('SVG найден:', svg);
+                        
+                        // Ищем родительскую кнопку (поднимаемся вверх по DOM)
+                        let parent = svg.parentElement;
+                        let depth = 0;
+                        
+                        while (parent && depth < 10) {
+                            console.log('Проверяем родителя:', parent.tagName, parent.getAttribute('role'));
                             
-                            if (parent && parent.tagName === 'BUTTON') {
+                            if (parent.tagName === 'BUTTON' || parent.getAttribute('role') === 'button') {
+                                console.log('Найдена кнопка! Кликаем...');
                                 parent.click();
                                 return true;
                             }
+                            
+                            parent = parent.parentElement;
+                            depth++;
                         }
                         
+                        console.error('Кнопка не найдена в родителях SVG');
                         return false;
                     }
                 ''')
                 
                 if not clicked:
-                    logger.error("❌ Не удалось кликнуть на кнопку")
+                    logger.error("❌ Не удалось кликнуть на родительскую кнопку")
                     await self.email_service.cancel_email(activation_id)
                     return None
                 
-                logger.info("✅ Кликнули на кликабельный элемент")
+                logger.info("✅ Кликнули на кнопку")
                 
                 # ВАЖНО: Форма открывается в модальном окне (URL НЕ меняется!)
                 # Даем время на анимацию открытия модального окна
