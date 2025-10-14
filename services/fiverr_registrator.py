@@ -235,9 +235,10 @@ class FiverrRegistrator:
                     return None
             
             # ШАГ 2: Нажимаем на кнопку "Accedi" (Войти)
-            logger.info("Клик на кнопку Accedi...")
+            logger.info("Клик на кнопку Accedi (login link)...")
             try:
-                await self.page.click('a[href*="/login"]', timeout=15000)
+                # Селектор: a[href="/login?source=top_nav"]
+                await self.page.click('a.nav-link[href*="/login"]', timeout=15000)
                 await self._wait_random(2, 3)
             except:
                 logger.warning("Кнопка Accedi не найдена, переходим напрямую на /login")
@@ -249,19 +250,37 @@ class FiverrRegistrator:
                     await self.email_service.cancel_email(activation_id)
                     return None
             
-            # ШАГ 3: Клик на "Continua con email/username"
-            logger.info("Клик на 'Continua con email/username'...")
+            # ШАГ 3: Клик на кнопку "Continua con email/username"
+            logger.info("Клик на кнопку email/username...")
             try:
-                # Ищем кнопку по тексту
-                await self.page.click('text="Continua con email/username"', timeout=10000)
-                await self._wait_random(2, 3)
-            except:
-                logger.warning("Кнопка не найдена по тексту, пробуем альтернативный селектор")
-                try:
-                    await self.page.click('button:has-text("email")', timeout=5000)
-                    await self._wait_random(2, 3)
-                except:
+                # Ищем по структуре: p с data-track-tag="text"
+                # Или кнопку которая содержит этот текст
+                selectors = [
+                    'p[data-track-tag="text"]._ifhvih',  # Точный селектор из HTML
+                    'button:has(p[data-track-tag="text"])',  # Кнопка содержащая этот параграф
+                    'div:has(p._ifhvih)',  # Родительский div
+                ]
+                
+                clicked = False
+                for selector in selectors:
+                    try:
+                        await self.page.click(selector, timeout=5000)
+                        clicked = True
+                        logger.info(f"Кликнули через селектор: {selector}")
+                        await self._wait_random(2, 3)
+                        break
+                    except:
+                        continue
+                
+                if not clicked:
                     logger.error("Не удалось найти кнопку для продолжения с email")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"Ошибка клика на кнопку email: {e}")
+                await self.email_service.cancel_email(activation_id)
+                return None
             
             # ШАГ 4: Заполняем email и пароль
             logger.info("Заполнение email и пароля...")
@@ -315,20 +334,36 @@ class FiverrRegistrator:
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # ШАГ 5: Нажимаем "Continua"
-            logger.info("Клик на кнопку Continua...")
+            # ШАГ 5: Нажимаем "Continua" (submit button)
+            logger.info("Клик на кнопку Continua (submit)...")
             try:
-                await self.page.click('button:has-text("Continua")', timeout=10000)
-                await self._wait_random(3, 5)
-            except:
-                # Альтернативный способ - через type=submit
-                try:
-                    await self.page.click('button[type="submit"]', timeout=5000)
-                    await self._wait_random(3, 5)
-                except Exception as e:
-                    logger.error(f"Не удалось нажать кнопку Continua: {e}")
+                # Селектор: button[type="submit"][data-track-tag="button"]
+                selectors = [
+                    'button[type="submit"][data-track-tag="button"]',
+                    'button[type="submit"]._arosdn',  # Класс из HTML
+                    'button[type="submit"]',
+                ]
+                
+                clicked = False
+                for selector in selectors:
+                    try:
+                        await self.page.click(selector, timeout=5000)
+                        clicked = True
+                        logger.info(f"Кликнули через селектор: {selector}")
+                        await self._wait_random(3, 5)
+                        break
+                    except:
+                        continue
+                
+                if not clicked:
+                    logger.error("Не удалось нажать кнопку Continua")
                     await self.email_service.cancel_email(activation_id)
                     return None
+                    
+            except Exception as e:
+                logger.error(f"Ошибка клика на Continua: {e}")
+                await self.email_service.cancel_email(activation_id)
+                return None
             
             # ШАГ 6: Вводим username
             logger.info(f"Ввод username: {username}...")
@@ -355,19 +390,32 @@ class FiverrRegistrator:
             if not username_filled:
                 logger.warning("Поле username не найдено, возможно не требуется")
             
-            # ШАГ 7: Нажимаем "Crea il mio account"
-            logger.info("Клик на 'Crea il mio account'...")
+            # ШАГ 7: Нажимаем "Crea il mio account" (submit button)
+            logger.info("Клик на кнопку создания аккаунта (submit)...")
             try:
-                await self.page.click('button:has-text("Crea il mio account")', timeout=10000)
+                # Селектор: button[type="submit"][data-track-tag="button"]
+                # Это вторая submit кнопка на странице
+                submit_buttons = await self.page.query_selector_all('button[type="submit"]')
+                
+                if len(submit_buttons) >= 2:
+                    # Кликаем на вторую submit кнопку (для создания аккаунта)
+                    await submit_buttons[1].click()
+                    logger.info("Кликнули на вторую submit кнопку")
+                elif len(submit_buttons) == 1:
+                    # Если только одна - кликаем на нее
+                    await submit_buttons[0].click()
+                    logger.info("Кликнули на единственную submit кнопку")
+                else:
+                    # Пробуем через data-track-tag
+                    await self.page.click('button[data-track-tag="button"][type="submit"]', timeout=5000)
+                    logger.info("Кликнули через data-track-tag")
+                
                 await self._wait_random(3, 5)
-            except:
-                try:
-                    await self.page.click('button:has-text("Crea")', timeout=5000)
-                    await self._wait_random(3, 5)
-                except Exception as e:
-                    logger.error(f"Не удалось нажать кнопку создания аккаунта: {e}")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
+                    
+            except Exception as e:
+                logger.error(f"Не удалось нажать кнопку создания аккаунта: {e}")
+                await self.email_service.cancel_email(activation_id)
+                return None
             
             # ШАГ 8: Ожидаем письмо с кодом подтверждения (1-3 минуты)
             logger.info("Ожидание письма с кодом подтверждения (до 3 минут)...")
@@ -426,10 +474,30 @@ class FiverrRegistrator:
                         except:
                             continue
                 
-                # ШАГ 10: Нажимаем "Invia"
+                # ШАГ 10: Нажимаем "Invia" (submit/role button)
                 logger.info("Клик на кнопку Invia...")
-                await self.page.click('button:has-text("Invia")', timeout=10000)
-                await self._wait_random(3, 5)
+                # Селектор: button[role="button"] или button[data-track-tag="button"]
+                selectors = [
+                    'button[role="button"][data-track-tag="button"]',
+                    'button[role="button"]._arosdn',
+                    'button[role="button"]',
+                    'button[data-track-tag="button"]',
+                ]
+                
+                clicked = False
+                for selector in selectors:
+                    try:
+                        await self.page.click(selector, timeout=5000)
+                        clicked = True
+                        logger.info(f"Кликнули Invia через: {selector}")
+                        await self._wait_random(3, 5)
+                        break
+                    except:
+                        continue
+                
+                if not clicked:
+                    logger.error("Не удалось нажать кнопку Invia")
+                    return None
                 
             except Exception as e:
                 logger.error(f"Ошибка при вводе кода: {e}")
@@ -445,10 +513,29 @@ class FiverrRegistrator:
                         await checkboxes[0].click()
                         await self._wait_random(0.5, 1)
                     
-                    # Нажимаем "Avanti"
-                    await self.page.click('button:has-text("Avanti")', timeout=10000)
-                    logger.info(f"Вопрос {i+1}/3 пройден")
-                    await self._wait_random(2, 3)
+                    # Нажимаем "Avanti" (role="button")
+                    # Селектор: button[role="button"][data-track-tag="button"]
+                    selectors = [
+                        'button[role="button"][data-track-tag="button"]',
+                        'button[role="button"]._arosdn',
+                        'button[role="button"]',
+                    ]
+                    
+                    clicked = False
+                    for selector in selectors:
+                        try:
+                            await self.page.click(selector, timeout=5000)
+                            clicked = True
+                            logger.info(f"Вопрос {i+1}/3 пройден")
+                            await self._wait_random(2, 3)
+                            break
+                        except:
+                            continue
+                    
+                    if not clicked:
+                        logger.warning(f"Не удалось нажать кнопку на вопросе {i+1}, возможно онбординг завершен")
+                        break
+                        
                 except Exception as e:
                     logger.warning(f"Ошибка на шаге онбординга {i+1}: {e}")
                     # Продолжаем, возможно онбординг уже завершен
