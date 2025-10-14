@@ -59,13 +59,13 @@ class FiverrRegistrator:
     
     def _generate_username(self, base_name: str = None) -> str:
         """
-        Генерация ПОЛНОСТЬЮ СЛУЧАЙНОГО username (каждый раз новый)
+        Генерация username СТРОГО В ФОРМАТЕ: firstname_lastname
         
         Args:
             base_name: Базовое имя из email (НЕ используется - полная рандомизация)
             
         Returns:
-            Сгенерированный username
+            Сгенерированный username в формате firstname_lastname
         """
         # ПОЛНАЯ рандомизация - большой список имен
         first_names = [
@@ -84,28 +84,23 @@ class FiverrRegistrator:
             'thomas', 'taylor', 'moore', 'jackson', 'martin', 'lee', 'thompson', 'white',
             'harris', 'clark', 'lewis', 'robinson', 'walker', 'young', 'allen', 'king',
             'wright', 'scott', 'torres', 'nguyen', 'hill', 'flores', 'green', 'adams',
-            'browns', 'wilson', 'anderson', 'thomas'
+            'browns'
         ]
         
         # ВСЕГДА случайный выбор
         first = random.choice(first_names)
         last = random.choice(last_names)
         
-        # Случайный формат: firstname_lastname, firstnamelastname, или с цифрами
-        format_choice = random.randint(1, 3)
+        # ТОЛЬКО ФОРМАТ: firstname_lastname (с подчеркиванием!)
+        username = f"{first}_{last}"
         
-        if format_choice == 1:
-            username = f"{first}_{last}"
-        elif format_choice == 2:
-            username = f"{first}{last}"
-        else:
-            if random.choice([True, False]):
-                username = f"{first}_{last[:4]}{random.randint(10, 99)}"
-            else:
-                username = f"{first}{random.randint(100, 999)}"
+        # Если длиннее 15 символов (лимит Fiverr) - обрезаем фамилию
+        if len(username) > 15:
+            # Оставляем имя + _ + часть фамилии, чтобы сохранить формат
+            max_last_name_len = 15 - len(first) - 1  # -1 для подчеркивания
+            username = f"{first}_{last[:max_last_name_len]}"
         
-        username = username[:15]  # Fiverr limit
-        logger.debug(f"Сгенерирован случайный username: {username}")
+        logger.debug(f"Сгенерирован username: {username}")
         return username
     
     def _extract_code_from_html(self, html_content: str) -> Optional[str]:
