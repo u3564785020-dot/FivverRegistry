@@ -180,15 +180,13 @@ class FiverrRegistrator:
             Словарь с данными аккаунта или None в случае ошибки
         """
         try:
-            # Проверяем прокси перед началом (если указан)
+            # Проверяем прокси перед началом (если указан) - НЕ блокирующая проверка
             if self.proxy:
                 logger.info(f"Проверка прокси {self.proxy}...")
                 from services.proxy_manager import ProxyManager
-                is_working = await ProxyManager.check_proxy(self.proxy, timeout=15)
-                if not is_working:
-                    logger.error(f"Прокси {self.proxy} не работает или слишком медленный!")
-                    return None
-                logger.info("✅ Прокси работает")
+                # Даем прокси шанс - проверка не критична
+                await ProxyManager.check_proxy(self.proxy, timeout=20)
+                # Продолжаем даже если проверка не прошла - прокси может работать с Fiverr
             
             # Инициализируем браузер
             await self._init_browser()
