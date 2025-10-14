@@ -233,7 +233,8 @@ class FiverrRegistrator:
             logger.info("Заказ email для регистрации...")
             email_data = await self.email_service.order_email(
                 site="fiverr.com",
-                domain="gmx.com"
+                domain="gmx.com",
+                regex=r"\d{6}"  # Ищем 6-значный код в письме
             )
             
             if not email_data:
