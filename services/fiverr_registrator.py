@@ -311,107 +311,84 @@ class FiverrRegistrator:
                 # Теперь находим родительский элемент (кнопку/div) и кликаем на него
                 logger.info("Поиск родительской кнопки для клика...")
                 
-                # ЛОГИРОВАНИЕ: Выводим ВСЮ структуру родителей
-                logger.info("Анализ структуры DOM для кнопки...")
-                dom_structure = await self.page.evaluate('''
+                # ИЩЕМ КЛИКАБЕЛЬНЫЙ ЭЛЕМЕНТ (с cursor: pointer)
+                logger.info("Поиск КЛИКАБЕЛЬНОГО элемента с текстом кнопки...")
+                clickable_info = await self.page.evaluate('''
                     () => {
-                        const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
-                        if (!p) return {error: 'Параграф не найден'};
+                        // Ищем ВСЕ <p> с data-track-tag="text"
+                        const allP = document.querySelectorAll('p[data-track-tag="text"]._ifhvih');
                         
-                        const parents = [];
-                        let parent = p.parentElement;
-                        let depth = 0;
-                        
-                        while (parent && depth < 10) {
-                            const style = window.getComputedStyle(parent);
-                            parents.push({
-                                depth: depth,
-                                tag: parent.tagName,
-                                role: parent.getAttribute('role'),
-                                class: parent.className,
-                                cursor: style.cursor,
-                                onclick: parent.onclick !== null || parent.getAttribute('onclick') ? 'yes' : 'no',
-                                tabindex: parent.getAttribute('tabindex')
+                        const results = [];
+                        allP.forEach((p, index) => {
+                            // Ищем родителя с cursor: pointer
+                            let parent = p.parentElement;
+                            let depth = 0;
+                            let clickableParent = null;
+                            
+                            while (parent && depth < 10) {
+                                const style = window.getComputedStyle(parent);
+                                if (style.cursor === 'pointer' || parent.getAttribute('role') === 'button') {
+                                    clickableParent = {
+                                        tag: parent.tagName,
+                                        role: parent.getAttribute('role'),
+                                        cursor: style.cursor,
+                                        class: parent.className
+                                    };
+                                    break;
+                                }
+                                parent = parent.parentElement;
+                                depth++;
+                            }
+                            
+                            results.push({
+                                index: index,
+                                text: p.textContent.substring(0, 50),
+                                clickableParent: clickableParent
                             });
-                            parent = parent.parentElement;
-                            depth++;
-                        }
+                        });
                         
-                        return {parents: parents};
+                        return results;
                     }
                 ''')
                 
-                logger.info(f"Структура DOM: {dom_structure}")
+                logger.info(f"Найдено элементов: {clickable_info}")
                 
-                # ПРОБУЕМ 3 СПОСОБА КЛИКА:
-                
-                # Способ 1: Клик на сам <p>
-                logger.info("Способ 1: Клик на сам <p> элемент...")
+                # Кликаем на родителя с cursor: pointer
+                logger.info("Клик на кликабельный родительский элемент...")
                 clicked = await self.page.evaluate('''
                     () => {
-                        const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
-                        if (p) {
-                            p.click();
-                            return true;
+                        // Ищем ВСЕ <p> с data-track-tag="text"
+                        const allP = document.querySelectorAll('p[data-track-tag="text"]._ifhvih');
+                        
+                        for (const p of allP) {
+                            // Ищем родителя с cursor: pointer
+                            let parent = p.parentElement;
+                            let depth = 0;
+                            
+                            while (parent && depth < 10) {
+                                const style = window.getComputedStyle(parent);
+                                if (style.cursor === 'pointer' || parent.getAttribute('role') === 'button') {
+                                    console.log('Найден кликабельный элемент:', parent.tagName, 'с текстом:', p.textContent.substring(0, 30));
+                                    parent.click();
+                                    return true;
+                                }
+                                parent = parent.parentElement;
+                                depth++;
+                            }
                         }
+                        
+                        console.log('Кликабельный элемент не найден');
                         return false;
                     }
                 ''')
                 
-                if clicked:
-                    logger.info("✅ Кликнули на <p> элемент")
-                    await self._wait_random(2, 3)
-                else:
-                    # Способ 2: Клик на первого родителя
-                    logger.info("Способ 2: Клик на первого родителя...")
-                    clicked = await self.page.evaluate('''
-                        () => {
-                            const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
-                            if (p && p.parentElement) {
-                                p.parentElement.click();
-                                return true;
-                            }
-                            return false;
-                        }
-                    ''')
-                    
-                    if clicked:
-                        logger.info("✅ Кликнули на родителя <p>")
-                        await self._wait_random(2, 3)
-                    else:
-                        # Способ 3: Эмуляция события клика
-                        logger.info("Способ 3: Эмуляция события мыши...")
-                        clicked = await self.page.evaluate('''
-                            () => {
-                                const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
-                                if (!p) return false;
-                                
-                                // Пробуем на всех родителях до 5 уровня
-                                let parent = p;
-                                for (let i = 0; i < 5; i++) {
-                                    if (!parent) break;
-                                    
-                                    // Создаем событие клика
-                                    const event = new MouseEvent('click', {
-                                        view: window,
-                                        bubbles: true,
-                                        cancelable: true
-                                    });
-                                    parent.dispatchEvent(event);
-                                    
-                                    parent = parent.parentElement;
-                                }
-                                return true;
-                            }
-                        ''')
-                        
-                        if clicked:
-                            logger.info("✅ Эмулировали клик на элемент и родителей")
-                            await self._wait_random(2, 3)
-                        else:
-                            logger.error("❌ Все 3 способа клика не сработали")
-                            await self.email_service.cancel_email(activation_id)
-                            return None
+                if not clicked:
+                    logger.error("❌ Не найден кликабельный элемент с cursor: pointer")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+                
+                logger.info("✅ Кликнули на кликабельный элемент")
+                await self._wait_random(2, 3)
                 
                 logger.info("✅ Кликнули через JavaScript на родительский элемент")
                 
