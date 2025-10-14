@@ -325,18 +325,24 @@ class FiverrRegistrator:
                             // Получаем текст кнопки
                             const text = btn.innerText || btn.textContent || '';
                             
-                            // Получаем HTML (первые 300 символов)
-                            const html = btn.outerHTML.substring(0, 300);
+                            // Получаем ПОЛНЫЙ HTML (для лога - первые 1000 символов)
+                            const html = btn.outerHTML.substring(0, 1000);
                             
                             // Проверяем наличие SVG
                             const hasSvg = btn.querySelector('svg') ? true : false;
                             const svgTag = btn.querySelector('svg') ? btn.querySelector('svg').getAttribute('data-track-tag') : null;
+                            
+                            // Ищем все SVG внутри кнопки
+                            const allSvgs = Array.from(btn.querySelectorAll('svg')).map(svg => 
+                                svg.getAttribute('data-track-tag') || 'no-tag'
+                            );
                             
                             return {
                                 index: index,
                                 text: text.substring(0, 100),
                                 hasSvg: hasSvg,
                                 svgTag: svgTag,
+                                allSvgs: allSvgs,
                                 html: html
                             };
                         });
@@ -345,7 +351,7 @@ class FiverrRegistrator:
                 
                 logger.info(f"📊 НАЙДЕНО КНОПОК: {len(buttons_info)}")
                 for btn in buttons_info:
-                    logger.info(f"  Кнопка #{btn['index']}: text='{btn['text']}', svg={btn['hasSvg']}, svgTag={btn['svgTag']}")
+                    logger.info(f"  Кнопка #{btn['index']}: text='{btn['text']}', svg={btn['hasSvg']}, allSvgs={btn['allSvgs']}")
                     logger.info(f"    HTML: {btn['html']}")
                 
                 # ИЩЕМ кнопку с email (по разным признакам)
