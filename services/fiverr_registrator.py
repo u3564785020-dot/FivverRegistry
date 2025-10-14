@@ -390,9 +390,17 @@ class FiverrRegistrator:
                 logger.info("✅ Кликнули на кликабельный элемент")
                 
                 # ВАЖНО: Форма открывается в модальном окне (URL НЕ меняется!)
-                # Ждем появления полей ввода СРАЗУ после клика
-                logger.info("Ожидание появления полей ввода в модальном окне...")
-                await self._wait_random(1, 2)
+                # Даем время на анимацию открытия модального окна
+                logger.info("Ожидание открытия модального окна с формой...")
+                await self._wait_random(2, 3)
+                
+                # СКРИНШОТ для debug
+                try:
+                    screenshot_path = f"/tmp/fiverr_modal_{email}.png"
+                    await self.page.screenshot(path=screenshot_path, full_page=True)
+                    logger.info(f"Скриншот сохранен: {screenshot_path}")
+                except:
+                    pass
                 
                 try:
                     await self.page.wait_for_selector(
@@ -404,24 +412,39 @@ class FiverrRegistrator:
                 except Exception as e:
                     logger.error(f"❌ Форма не появилась за 15 секунд: {e}")
                     
-                    # Debug: Проверяем что есть на странице
-                    logger.error("Проверка наличия модального окна...")
+                    # Debug: ПОЛНАЯ ДИАГНОСТИКА
+                    logger.error("=== ДИАГНОСТИКА МОДАЛЬНОГО ОКНА ===")
+                    
+                    # 1. Все input на странице
                     modal_check = await self.page.evaluate('''
                         () => {
                             const allInputs = document.querySelectorAll('input');
                             const inputs = [];
                             allInputs.forEach(input => {
+                                const rect = input.getBoundingClientRect();
                                 inputs.push({
                                     type: input.type,
                                     name: input.name,
                                     id: input.id,
-                                    visible: input.offsetParent !== null
+                                    placeholder: input.placeholder,
+                                    visible: input.offsetParent !== null,
+                                    inViewport: rect.top >= 0 && rect.left >= 0
                                 });
                             });
                             return inputs;
                         }
                     ''')
-                    logger.error(f"Все input на странице: {modal_check}")
+                    logger.error(f"ВСЕ INPUT: {modal_check}")
+                    
+                    # 2. HTML модального окна (если есть)
+                    modal_html = await self.page.evaluate('''
+                        () => {
+                            const modal = document.querySelector('[role="dialog"], .modal, [data-modal]');
+                            if (modal) return modal.innerHTML.substring(0, 500);
+                            return "Модальное окно не найдено";
+                        }
+                    ''')
+                    logger.error(f"HTML МОДАЛЬНОГО ОКНА: {modal_html}")
                     
                     await self.email_service.cancel_email(activation_id)
                     return None
