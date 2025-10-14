@@ -232,14 +232,19 @@ class FiverrRegistrator:
                     await self.email_service.cancel_email(activation_id)
                     return None
             
-            # ШАГ 2: Нажимаем на кнопку "Accedi" (Войти)
-            logger.info("Клик на кнопку Accedi (login link)...")
+            # ШАГ 2: Нажимаем на кнопку "Sign in" (Accedi/Войти)
+            logger.info("Клик на кнопку Sign in...")
             try:
                 # Селектор: a[href="/login?source=top_nav"]
                 await self.page.click('a.nav-link[href*="/login"]', timeout=15000)
-                await self._wait_random(2, 3)
+                logger.info("✅ Кликнули на Sign in")
+                
+                # ВАЖНО: Ждем появления модального окна с опциями логина/регистрации
+                logger.info("Ожидание появления модального окна с опциями...")
+                await self._wait_random(2, 4)
+                
             except:
-                logger.warning("Кнопка Accedi не найдена, переходим напрямую на /login")
+                logger.warning("Кнопка Sign in не найдена, переходим напрямую на /login")
                 try:
                     await self.page.goto("https://it.fiverr.com/login", wait_until="domcontentloaded", timeout=90000)
                     await self._wait_random(3, 5)
@@ -248,31 +253,40 @@ class FiverrRegistrator:
                     await self.email_service.cancel_email(activation_id)
                     return None
             
-            # ШАГ 3: Клик на кнопку "Continua con email/username"
-            logger.info("Клик на кнопку email/username...")
+            # ШАГ 3: Ждем и кликаем на кнопку "Continue with email/username"
+            logger.info("Поиск кнопки 'Continue with email/username'...")
             try:
-                # Ищем по структуре: p с data-track-tag="text"
-                # Или кнопку которая содержит этот текст
-                selectors = [
+                # Сначала ЖДЕМ появления кнопки (модальное окно должно загрузиться)
+                button_selectors = [
                     'p[data-track-tag="text"]._ifhvih',  # Точный селектор из HTML
-                    'button:has(p[data-track-tag="text"])',  # Кнопка содержащая этот параграф
+                    'button:has(p[data-track-tag="text"])',  # Кнопка содержащая параграф
                     'div:has(p._ifhvih)',  # Родительский div
                 ]
                 
-                clicked = False
-                for selector in selectors:
+                button_found = False
+                button_selector = None
+                
+                # Пробуем найти кнопку (даем 15 секунд на загрузку модального окна)
+                for selector in button_selectors:
                     try:
-                        await self.page.click(selector, timeout=5000)
-                        clicked = True
-                        logger.info(f"Кликнули через селектор: {selector}")
+                        await self.page.wait_for_selector(selector, timeout=15000, state='visible')
+                        button_selector = selector
+                        button_found = True
+                        logger.info(f"✅ Кнопка найдена: {selector}")
                         break
                     except:
+                        logger.debug(f"Кнопка не найдена через: {selector}")
                         continue
                 
-                if not clicked:
-                    logger.error("Не удалось найти кнопку для продолжения с email")
+                if not button_found:
+                    logger.error("❌ Кнопка 'Continue with email/username' не появилась за 15 секунд")
                     await self.email_service.cancel_email(activation_id)
                     return None
+                
+                # Теперь кликаем на найденную кнопку
+                logger.info("Клик на кнопку 'Continue with email/username'...")
+                await self.page.click(button_selector, timeout=5000)
+                logger.info(f"✅ Кликнули через: {button_selector}")
                 
                 # ВАЖНО: Ждем загрузки формы после клика
                 logger.info("Ожидание загрузки формы email/password...")
