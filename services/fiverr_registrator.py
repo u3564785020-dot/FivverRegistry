@@ -587,14 +587,15 @@ class FiverrRegistrator:
             logger.info(f"Ввод username: {username}...")
             
             # Ждем появления поля username (оно появляется после ввода email/password)
-            await self._wait_random(2, 3)
+            await self._wait_random(3, 5)
             
             # Точные селекторы из HTML
             username_input_selectors = [
                 'input#username',  # ID из HTML
                 'input[name="username"][maxlength="15"]',  # name + maxlength
                 'input[name="username"][type="text"]',  # name + type
-                'input[placeholder="john_smith"]',  # placeholder из HTML
+                'input[placeholder="mario_rossi"]',  # placeholder из HTML (итальянский)
+                'input[data-track-tag="input"][name="username"]',  # data-track-tag + name
                 'input[name="username"]',  # Универсальный fallback
             ]
             
@@ -612,7 +613,8 @@ class FiverrRegistrator:
                 username_filled = False
                 for selector in username_input_selectors:
                     try:
-                        username_field = await self.page.wait_for_selector(selector, timeout=15000, state='visible')
+                        logger.debug(f"Поиск username поля через селектор: {selector}")
+                        username_field = await self.page.wait_for_selector(selector, timeout=20000, state='visible')
                         
                         # Очищаем поле перед вводом (если это повторная попытка)
                         if attempt > 0:
@@ -629,6 +631,24 @@ class FiverrRegistrator:
                         continue
                 
                 if not username_filled:
+                    # DEBUG: Показываем все input на странице
+                    try:
+                        all_inputs = await self.page.evaluate('''
+                            () => {
+                                const inputs = document.querySelectorAll('input');
+                                return Array.from(inputs).map(inp => ({
+                                    id: inp.id,
+                                    name: inp.name,
+                                    type: inp.type,
+                                    placeholder: inp.placeholder,
+                                    visible: inp.offsetParent !== null
+                                }));
+                            }
+                        ''')
+                        logger.error(f"❌ Все input элементы на странице: {all_inputs}")
+                    except:
+                        pass
+                    
                     logger.error("❌ ОБЯЗАТЕЛЬНОЕ поле username не найдено!")
                     await self.email_service.cancel_email(activation_id)
                     return None
