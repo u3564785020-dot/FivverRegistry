@@ -587,6 +587,21 @@ class FiverrRegistrator:
                 
                 if form_submitted:
                     logger.info("✅ Форма отправлена через JavaScript!")
+                    await self._wait_random(2, 3)
+                    
+                    # ПРОВЕРЯЕМ наличие ошибок валидации на странице
+                    try:
+                        page_text = await self.page.evaluate('() => document.body.innerText')
+                        error_keywords = ['password', 'invalid', 'incorrect', 'error', 'errore', 'non valido']
+                        
+                        for keyword in error_keywords:
+                            if keyword in page_text.lower():
+                                logger.error(f"⚠️ Обнаружена ошибка валидации! Ключевое слово: '{keyword}'")
+                                logger.error(f"Текст страницы: {page_text[:500]}")
+                                await self.email_service.cancel_email(activation_id)
+                                return None
+                    except Exception as e:
+                        logger.debug(f"Не удалось проверить ошибки: {e}")
                     
                     # Ждем пока ИСЧЕЗНУТ старые поля email/password
                     try:
