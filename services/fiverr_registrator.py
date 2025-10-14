@@ -265,13 +265,35 @@ class FiverrRegistrator:
                         await self.page.click(selector, timeout=5000)
                         clicked = True
                         logger.info(f"Кликнули через селектор: {selector}")
-                        await self._wait_random(2, 3)
                         break
                     except:
                         continue
                 
                 if not clicked:
                     logger.error("Не удалось найти кнопку для продолжения с email")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+                
+                # ВАЖНО: Ждем загрузки формы после клика
+                logger.info("Ожидание загрузки формы email/password...")
+                await self._wait_random(3, 5)
+                
+                # Логируем текущий URL для отладки
+                current_url = self.page.url
+                logger.info(f"Текущий URL: {current_url}")
+                
+                # Ждем появления поля email (может загружаться динамически)
+                logger.info("Ожидание появления полей ввода...")
+                try:
+                    await self.page.wait_for_selector(
+                        'input#identification-usernameOrEmail, input[name="usernameOrEmail"]',
+                        timeout=30000,
+                        state='visible'
+                    )
+                    logger.info("✅ Поля формы загрузились")
+                except Exception as e:
+                    logger.error(f"❌ Форма не загрузилась за 30 секунд: {e}")
+                    logger.error(f"Текущий URL: {self.page.url}")
                     await self.email_service.cancel_email(activation_id)
                     return None
                     
@@ -294,10 +316,11 @@ class FiverrRegistrator:
             email_filled = False
             for selector in email_input_selectors:
                 try:
-                    await self.page.wait_for_selector(selector, timeout=10000)
+                    # Проверяем что элемент видим и доступен
+                    await self.page.wait_for_selector(selector, timeout=5000, state='visible')
                     await self.page.fill(selector, email)
                     email_filled = True
-                    logger.info(f"✅ Email введен через селектор: {selector}")
+                    logger.info(f"✅ Email '{email}' введен через селектор: {selector}")
                     await self._wait_random(1, 2)
                     break
                 except Exception as e:
@@ -306,6 +329,18 @@ class FiverrRegistrator:
             
             if not email_filled:
                 logger.error("❌ Не удалось найти поле email")
+                logger.error(f"Текущий URL: {self.page.url}")
+                # Попытка получить список всех input на странице для отладки
+                try:
+                    inputs = await self.page.query_selector_all('input')
+                    logger.error(f"Всего найдено input элементов: {len(inputs)}")
+                    for i, inp in enumerate(inputs[:5]):  # Первые 5
+                        inp_type = await inp.get_attribute('type')
+                        inp_name = await inp.get_attribute('name')
+                        inp_id = await inp.get_attribute('id')
+                        logger.error(f"Input {i}: type={inp_type}, name={inp_name}, id={inp_id}")
+                except:
+                    pass
                 await self.email_service.cancel_email(activation_id)
                 return None
             
