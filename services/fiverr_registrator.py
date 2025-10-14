@@ -606,7 +606,7 @@ class FiverrRegistrator:
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # ШАГ 6: Вводим username (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!)
+            # ШАГ 6: Вводим username (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!) с проверкой на занятость
             logger.info(f"Ввод username: {username}...")
             
             # Ждем появления поля username (оно появляется после ввода email/password)
@@ -621,21 +621,75 @@ class FiverrRegistrator:
                 'input[name="username"]',  # Универсальный fallback
             ]
             
-            username_filled = False
-            for selector in username_input_selectors:
-                try:
-                    await self.page.wait_for_selector(selector, timeout=15000, state='visible')
-                    await self.page.fill(selector, username)
-                    username_filled = True
-                    logger.info(f"✅ Username '{username}' введен через селектор: {selector}")
-                    await self._wait_random(1, 2)
-                    break
-                except Exception as e:
-                    logger.debug(f"Селектор {selector} не сработал: {e}")
-                    continue
+            # Попытки ввода username с проверкой на занятость
+            max_username_attempts = 5
+            username_accepted = False
             
-            if not username_filled:
-                logger.error("❌ ОБЯЗАТЕЛЬНОЕ поле username не найдено!")
+            for attempt in range(max_username_attempts):
+                # Если это не первая попытка - генерируем новый username
+                if attempt > 0:
+                    username = self._generate_username()
+                    logger.info(f"Попытка {attempt + 1}/{max_username_attempts}: Генерируем новый username: {username}")
+                
+                # Заполняем поле username
+                username_filled = False
+                for selector in username_input_selectors:
+                    try:
+                        username_field = await self.page.wait_for_selector(selector, timeout=15000, state='visible')
+                        
+                        # Очищаем поле перед вводом (если это повторная попытка)
+                        if attempt > 0:
+                            await username_field.fill('')
+                            await self._wait_random(0.3, 0.5)
+                        
+                        await username_field.fill(username)
+                        username_filled = True
+                        logger.info(f"✅ Username '{username}' введен через селектор: {selector}")
+                        await self._wait_random(1, 2)
+                        break
+                    except Exception as e:
+                        logger.debug(f"Селектор {selector} не сработал: {e}")
+                        continue
+                
+                if not username_filled:
+                    logger.error("❌ ОБЯЗАТЕЛЬНОЕ поле username не найдено!")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+                
+                # Проверяем, есть ли ошибка "username занят"
+                # Текст ошибки: "Sembra che questo nome utente sia già in uso. Scegline un altro."
+                await self._wait_random(1, 2)  # Даем время на появление ошибки
+                
+                try:
+                    # Ищем сообщение об ошибке (может быть на разных языках)
+                    error_texts = [
+                        'già in uso',  # Итальянский: "уже используется"
+                        'already in use',  # Английский
+                        'already taken',  # Английский альтернативный
+                        'username is taken',  # Английский
+                        'Scegline un altro',  # Итальянский: "Выберите другое"
+                    ]
+                    
+                    page_content = await self.page.content()
+                    username_taken = any(error_text.lower() in page_content.lower() for error_text in error_texts)
+                    
+                    if username_taken:
+                        logger.warning(f"⚠️ Username '{username}' уже занят! Попытка {attempt + 1}/{max_username_attempts}")
+                        continue  # Переходим к следующей попытке с новым username
+                    else:
+                        # Username не занят, можно продолжать
+                        logger.info(f"✅ Username '{username}' свободен!")
+                        username_accepted = True
+                        break
+                        
+                except Exception as e:
+                    logger.debug(f"Ошибка при проверке занятости username: {e}")
+                    # Если не можем проверить - считаем что username свободен
+                    username_accepted = True
+                    break
+            
+            if not username_accepted:
+                logger.error(f"❌ Не удалось подобрать свободный username за {max_username_attempts} попыток")
                 await self.email_service.cancel_email(activation_id)
                 return None
             
