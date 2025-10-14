@@ -299,23 +299,23 @@ class FiverrRegistrator:
                     await self.email_service.cancel_email(activation_id)
                     return None
             
-            # ШАГ 2: Нажимаем на кнопку "Sign in" (Accedi/Войти)
-            logger.info("Клик на кнопку Sign in...")
+            # ШАГ 2: Нажимаем на кнопку "Join" (Iscriviti/Регистрация)
+            logger.info("Клик на кнопку Join (Sign Up)...")
             try:
-                # Селектор: a[href="/login?source=top_nav"]
-                clicked = await self._js_click('a.nav-link[href*="/login"]', timeout=15000)
+                # Селектор: a[href="/join?source=top_nav"] или кнопка Join в навбаре
+                clicked = await self._js_click('a.nav-link[href*="/join"]', timeout=15000)
                 if not clicked:
-                    raise Exception("Sign in button not clicked")
-                logger.info("✅ Кликнули на Sign in")
+                    raise Exception("Join button not clicked")
+                logger.info("✅ Кликнули на Join")
                 
-                # ВАЖНО: Ждем появления модального окна с опциями логина/регистрации
+                # ВАЖНО: Ждем появления модального окна с опциями регистрации
                 logger.info("Ожидание появления модального окна с опциями...")
                 await self._wait_random(2, 4)
                 
             except:
-                logger.warning("Кнопка Sign in не найдена, переходим напрямую на /login")
+                logger.warning("Кнопка Join не найдена, переходим напрямую на /join")
                 try:
-                    await self.page.goto("https://it.fiverr.com/login", wait_until="domcontentloaded", timeout=90000)
+                    await self.page.goto("https://it.fiverr.com/join", wait_until="domcontentloaded", timeout=90000)
                     await self._wait_random(3, 5)
                 except Exception as e:
                     logger.error(f"Не удалось открыть страницу логина: {e}")
