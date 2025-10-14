@@ -583,39 +583,27 @@ class FiverrRegistrator:
                 if submit_clicked:
                     logger.info("✅ Кликнули на кнопку Submit!")
                     
-                    # ЖДЕМ НАВИГАЦИИ (переход на следующую страницу)
-                    try:
-                        logger.info("Ожидание навигации после отправки формы...")
-                        await self.page.wait_for_load_state('networkidle', timeout=15000)
-                        logger.info("✅ Навигация завершена!")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Навигация не завершилась или завершилась раньше: {e}")
+                    # URL НЕ МЕНЯЕТСЯ - это модальное окно! Просто ждем обновления контента
+                    await self._wait_random(3, 4)
                     
-                    await self._wait_random(2, 3)
-                    
-                    # ПРОВЕРЯЕМ наличие ошибок валидации на странице
+                    # Ждем пока ИСЧЕЗНУТ старые поля email/password (модальное окно обновится)
                     try:
-                        page_text = await self.page.evaluate('() => document.body.innerText')
-                        error_keywords = ['password', 'invalid', 'incorrect', 'error', 'errore', 'non valido']
-                        
-                        for keyword in error_keywords:
-                            if keyword in page_text.lower():
-                                logger.error(f"⚠️ Обнаружена ошибка валидации! Ключевое слово: '{keyword}'")
-                                logger.error(f"Текст страницы: {page_text[:500]}")
+                        logger.info("Ожидание обновления модального окна...")
+                        await self.page.wait_for_selector('input#identification-password', state='hidden', timeout=10000)
+                        logger.info("✅ Старая форма исчезла, модальное окно обновилось")
+                    except:
+                        logger.warning("⚠️ Старая форма не исчезла, возможно ошибка валидации")
+                        # Проверяем наличие ошибок
+                        try:
+                            page_text = await self.page.evaluate('() => document.body.innerText')
+                            if any(keyword in page_text.lower() for keyword in ['invalid', 'error', 'errore', 'incorrect']):
+                                logger.error(f"❌ Обнаружена ошибка валидации! Текст: {page_text[:500]}")
                                 await self.email_service.cancel_email(activation_id)
                                 return None
-                    except Exception as e:
-                        logger.debug(f"Не удалось проверить ошибки: {e}")
+                        except:
+                            pass
                     
-                    # Ждем пока ИСЧЕЗНУТ старые поля email/password
-                    try:
-                        logger.info("Ожидание исчезновения формы email/password...")
-                        await self.page.wait_for_selector('input#identification-password', state='hidden', timeout=10000)
-                        logger.info("✅ Форма email/password исчезла")
-                    except:
-                        logger.warning("⚠️ Старая форма не исчезла или уже исчезла")
-                    
-                    await self._wait_random(3, 5)
+                    await self._wait_random(2, 3)
                 else:
                     logger.error("❌ Форма не валидна или не найдена!")
                     # Логируем текст страницы для диагностики
