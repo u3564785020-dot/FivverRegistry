@@ -28,32 +28,89 @@ class FiverrRegistrator:
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
     
-    def _generate_password(self, length: int = 16) -> str:
+    def _generate_password(self, length: int = 11) -> str:
         """
-        Генерация случайного пароля
+        Генерация случайного пароля (9-12 символов, заглавные буквы, цифры)
         
         Args:
-            length: Длина пароля
+            length: Длина пароля (по умолчанию 11)
             
         Returns:
             Сгенерированный пароль
         """
-        characters = string.ascii_letters + string.digits + "!@#$%^&*"
-        password = ''.join(random.choice(characters) for _ in range(length))
-        logger.debug(f"Сгенерирован пароль длиной {length}")
-        return password
-    
-    def _generate_username(self) -> str:
-        """
-        Генерация случайного username
+        # Гарантируем минимум 1 заглавную букву, 1 строчную и 1 цифру
+        password = [
+            random.choice(string.ascii_uppercase),  # Заглавная буква
+            random.choice(string.ascii_lowercase),  # Строчная буква
+            random.choice(string.digits),           # Цифра
+        ]
         
+        # Заполняем остальные символы
+        remaining = length - 3
+        characters = string.ascii_letters + string.digits
+        password.extend(random.choices(characters, k=remaining))
+        
+        # Перемешиваем
+        random.shuffle(password)
+        password_str = ''.join(password)
+        
+        logger.debug(f"Сгенерирован пароль длиной {length}")
+        return password_str
+    
+    def _generate_username(self, base_name: str = None) -> str:
+        """
+        Генерация username в формате text_text (например, Loreisa_browns)
+        
+        Args:
+            base_name: Базовое имя из email (опционально)
+            
         Returns:
             Сгенерированный username
         """
-        prefix = ''.join(random.choices(string.ascii_lowercase, k=3))
-        suffix = ''.join(random.choices(string.digits, k=4))
-        username = f"{prefix}_{suffix}_user"
+        if base_name:
+            # Используем имя из email если есть
+            parts = base_name.lower().split('_')
+            if len(parts) >= 2:
+                return base_name.lower()
+        
+        # Генерируем случайное имя
+        first_names = ['loreisa', 'maria', 'john', 'anna', 'david', 'sarah', 'michael', 'emma']
+        last_names = ['browns', 'smith', 'johnson', 'wilson', 'taylor', 'anderson', 'thomas']
+        
+        username = f"{random.choice(first_names)}_{random.choice(last_names)}"
+        logger.debug(f"Сгенерирован username: {username}")
         return username
+    
+    def _extract_code_from_html(self, html_content: str) -> Optional[str]:
+        """
+        Извлечение 6-значного кода из HTML письма
+        
+        Args:
+            html_content: HTML содержимое письма
+            
+        Returns:
+            6-значный код или None
+        """
+        import re
+        
+        # Ищем код в bold тегах или после "Il tuo codice:"
+        patterns = [
+            r'<b[^>]*>(\d{6})</b>',
+            r'<strong[^>]*>(\d{6})</strong>',
+            r'\*\*(\d{6})\*\*',
+            r'Il tuo codice:\s*\*\*(\d{6})\*\*',
+            r'codice:\s*(\d{6})',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, html_content)
+            if match:
+                code = match.group(1)
+                logger.info(f"Извлечен код подтверждения: {code}")
+                return code
+        
+        logger.error("Не удалось извлечь код из письма")
+        return None
     
     async def _init_browser(self):
         """Инициализация браузера с настройками"""
@@ -117,7 +174,7 @@ class FiverrRegistrator:
     
     async def register_account(self) -> Optional[Dict[str, Any]]:
         """
-        Регистрация нового аккаунта на Fiverr
+        Регистрация нового аккаунта на Fiverr (итальянская версия)
         
         Returns:
             Словарь с данными аккаунта или None в случае ошибки
@@ -130,7 +187,7 @@ class FiverrRegistrator:
             logger.info("Заказ email для регистрации...")
             email_data = await self.email_service.order_email(
                 site="fiverr.com",
-                domain="gmx.com"  # Можно использовать другие домены
+                domain="gmx.com"
             )
             
             if not email_data:
@@ -142,118 +199,269 @@ class FiverrRegistrator:
             logger.info(f"Получен email: {email}")
             
             # Генерируем данные для регистрации
-            password = self._generate_password()
-            username = self._generate_username()
+            password = self._generate_password(11)  # 9-12 символов
             
-            # Переходим на страницу регистрации
-            logger.info(f"Переход на {FIVERR_SIGNUP_URL}")
-            await self.page.goto(FIVERR_SIGNUP_URL, wait_until="networkidle")
-            await self._wait_random(2, 4)
+            # Извлекаем базовое имя из email для username
+            email_base = email.split('@')[0]
+            username = self._generate_username(email_base)
             
-            # Заполняем форму регистрации
-            # ВНИМАНИЕ: Селекторы могут измениться, нужно актуализировать
-            logger.info("Заполнение формы регистрации...")
+            # ШАГ 1: Переходим на главную страницу Fiverr
+            logger.info("Переход на fiverr.com...")
+            await self.page.goto("https://it.fiverr.com", wait_until="networkidle")
+            await self._wait_random(2, 3)
             
+            # ШАГ 2: Нажимаем на кнопку "Accedi" (Войти)
+            logger.info("Клик на кнопку Accedi...")
             try:
-                # Вводим email
-                email_selector = 'input[name="email"], input[type="email"], #email'
-                await self.page.wait_for_selector(email_selector, timeout=10000)
-                await self.page.fill(email_selector, email)
-                await self._wait_random(0.5, 1.5)
-                
-                # Вводим пароль
-                password_selector = 'input[name="password"], input[type="password"], #password'
-                await self.page.fill(password_selector, password)
-                await self._wait_random(0.5, 1.5)
-                
-                # Вводим username (если требуется)
+                await self.page.click('a[href*="/login"]', timeout=10000)
+                await self._wait_random(2, 3)
+            except:
+                logger.warning("Кнопка Accedi не найдена, переходим напрямую")
+                await self.page.goto("https://it.fiverr.com/login", wait_until="networkidle")
+                await self._wait_random(2, 3)
+            
+            # ШАГ 3: Клик на "Continua con email/username"
+            logger.info("Клик на 'Continua con email/username'...")
+            try:
+                # Ищем кнопку по тексту
+                await self.page.click('text="Continua con email/username"', timeout=10000)
+                await self._wait_random(2, 3)
+            except:
+                logger.warning("Кнопка не найдена по тексту, пробуем альтернативный селектор")
                 try:
-                    username_selector = 'input[name="username"], #username'
-                    await self.page.fill(username_selector, username)
-                    await self._wait_random(0.5, 1.5)
+                    await self.page.click('button:has-text("email")', timeout=5000)
+                    await self._wait_random(2, 3)
                 except:
-                    logger.debug("Поле username не найдено или не требуется")
-                
-                # Нажимаем кнопку регистрации
-                submit_selector = 'button[type="submit"], button.join-button, .sign-up-button'
-                await self.page.click(submit_selector)
-                
-                logger.info("Форма отправлена, ожидание подтверждения...")
-                await self._wait_random(3, 5)
-                
-            except Exception as e:
-                logger.error(f"Ошибка заполнения формы: {e}")
+                    logger.error("Не удалось найти кнопку для продолжения с email")
+            
+            # ШАГ 4: Заполняем email и пароль
+            logger.info("Заполнение email и пароля...")
+            
+            # Вводим email
+            email_input_selectors = [
+                'input[type="email"]',
+                'input[name="email"]',
+                'input[placeholder*="Email"]',
+                'input[placeholder*="email"]'
+            ]
+            
+            email_filled = False
+            for selector in email_input_selectors:
+                try:
+                    await self.page.wait_for_selector(selector, timeout=5000)
+                    await self.page.fill(selector, email)
+                    email_filled = True
+                    logger.info(f"Email введен через селектор: {selector}")
+                    await self._wait_random(1, 2)
+                    break
+                except:
+                    continue
+            
+            if not email_filled:
+                logger.error("Не удалось найти поле email")
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # Ожидаем письмо с подтверждением
-            logger.info("Ожидание письма с подтверждением...")
+            # Вводим пароль
+            password_input_selectors = [
+                'input[type="password"]',
+                'input[name="password"]',
+                'input[placeholder*="Password"]',
+                'input[placeholder*="password"]'
+            ]
+            
+            password_filled = False
+            for selector in password_input_selectors:
+                try:
+                    await self.page.fill(selector, password)
+                    password_filled = True
+                    logger.info(f"Пароль введен через селектор: {selector}")
+                    await self._wait_random(1, 2)
+                    break
+                except:
+                    continue
+            
+            if not password_filled:
+                logger.error("Не удалось найти поле пароля")
+                await self.email_service.cancel_email(activation_id)
+                return None
+            
+            # ШАГ 5: Нажимаем "Continua"
+            logger.info("Клик на кнопку Continua...")
+            try:
+                await self.page.click('button:has-text("Continua")', timeout=10000)
+                await self._wait_random(3, 5)
+            except:
+                # Альтернативный способ - через type=submit
+                try:
+                    await self.page.click('button[type="submit"]', timeout=5000)
+                    await self._wait_random(3, 5)
+                except Exception as e:
+                    logger.error(f"Не удалось нажать кнопку Continua: {e}")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+            
+            # ШАГ 6: Вводим username
+            logger.info(f"Ввод username: {username}...")
+            
+            username_input_selectors = [
+                'input[name="username"]',
+                'input[placeholder*="username"]',
+                'input[placeholder*="nome"]',
+                'input[type="text"]'
+            ]
+            
+            username_filled = False
+            for selector in username_input_selectors:
+                try:
+                    await self.page.wait_for_selector(selector, timeout=5000)
+                    await self.page.fill(selector, username)
+                    username_filled = True
+                    logger.info(f"Username введен через селектор: {selector}")
+                    await self._wait_random(1, 2)
+                    break
+                except:
+                    continue
+            
+            if not username_filled:
+                logger.warning("Поле username не найдено, возможно не требуется")
+            
+            # ШАГ 7: Нажимаем "Crea il mio account"
+            logger.info("Клик на 'Crea il mio account'...")
+            try:
+                await self.page.click('button:has-text("Crea il mio account")', timeout=10000)
+                await self._wait_random(3, 5)
+            except:
+                try:
+                    await self.page.click('button:has-text("Crea")', timeout=5000)
+                    await self._wait_random(3, 5)
+                except Exception as e:
+                    logger.error(f"Не удалось нажать кнопку создания аккаунта: {e}")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+            
+            # ШАГ 8: Ожидаем письмо с кодом подтверждения (1-3 минуты)
+            logger.info("Ожидание письма с кодом подтверждения (до 3 минут)...")
             message_data = await self.email_service.get_message(
                 activation_id=activation_id,
-                max_retries=60,
+                preview=True,  # Получаем HTML версию
+                max_retries=36,  # 36 * 5 сек = 3 минуты
                 retry_interval=5
             )
             
             if not message_data:
-                logger.error("Не удалось получить письмо с подтверждением")
+                logger.error("Не удалось получить письмо с кодом")
                 return None
             
-            confirmation_code = message_data['value']
+            # Извлекаем код из HTML письма
+            html_content = message_data.get('message', '')
+            confirmation_code = self._extract_code_from_html(html_content)
+            
+            if not confirmation_code:
+                # Пробуем value напрямую
+                confirmation_code = message_data.get('value', '')
+                if not confirmation_code or len(confirmation_code) != 6:
+                    logger.error("Не удалось извлечь 6-значный код")
+                    return None
+            
             logger.info(f"Получен код подтверждения: {confirmation_code}")
             
-            # Вводим код подтверждения (если требуется)
+            # ШАГ 9: Вводим код подтверждения (6 цифр)
+            logger.info("Ввод кода подтверждения...")
+            
+            # Ищем поля для ввода кода (может быть 6 отдельных полей или одно поле)
             try:
-                code_selector = 'input[name="code"], input[placeholder*="code"], #verification-code'
-                await self.page.wait_for_selector(code_selector, timeout=10000)
-                await self.page.fill(code_selector, confirmation_code)
-                await self._wait_random(0.5, 1.5)
+                # Пробуем найти отдельные поля для каждой цифры
+                code_inputs = await self.page.query_selector_all('input[type="text"]')
                 
-                # Подтверждаем код
-                confirm_button_selector = 'button[type="submit"], .verify-button, .confirm-button'
-                await self.page.click(confirm_button_selector)
+                if len(code_inputs) == 6:
+                    # 6 отдельных полей - вводим по одной цифре
+                    for i, digit in enumerate(confirmation_code):
+                        await code_inputs[i].fill(digit)
+                        await self._wait_random(0.2, 0.5)
+                else:
+                    # Одно поле - вводим весь код
+                    code_selectors = [
+                        'input[name="code"]',
+                        'input[placeholder*="codice"]',
+                        'input[placeholder*="code"]',
+                        'input[type="text"]'
+                    ]
+                    
+                    for selector in code_selectors:
+                        try:
+                            await self.page.fill(selector, confirmation_code)
+                            logger.info(f"Код введен через селектор: {selector}")
+                            await self._wait_random(1, 2)
+                            break
+                        except:
+                            continue
+                
+                # ШАГ 10: Нажимаем "Invia"
+                logger.info("Клик на кнопку Invia...")
+                await self.page.click('button:has-text("Invia")', timeout=10000)
                 await self._wait_random(3, 5)
                 
-                logger.info("Код подтверждения введен")
             except Exception as e:
-                logger.warning(f"Возможно, подтверждение по email не требуется: {e}")
+                logger.error(f"Ошибка при вводе кода: {e}")
+                return None
+            
+            # ШАГ 11: Проходим онбординг (3 вопроса)
+            logger.info("Прохождение онбординга...")
+            for i in range(3):
+                try:
+                    # Выбираем левый чекбокс (первый вариант)
+                    checkboxes = await self.page.query_selector_all('input[type="checkbox"], input[type="radio"]')
+                    if checkboxes:
+                        await checkboxes[0].click()
+                        await self._wait_random(0.5, 1)
+                    
+                    # Нажимаем "Avanti"
+                    await self.page.click('button:has-text("Avanti")', timeout=10000)
+                    logger.info(f"Вопрос {i+1}/3 пройден")
+                    await self._wait_random(2, 3)
+                except Exception as e:
+                    logger.warning(f"Ошибка на шаге онбординга {i+1}: {e}")
+                    # Продолжаем, возможно онбординг уже завершен
+                    break
             
             # Проверяем успешность регистрации
-            # Обычно при успешной регистрации происходит редирект на главную или профиль
+            await self._wait_random(2, 3)
             current_url = self.page.url
             
-            if "fiverr.com" in current_url and "join" not in current_url:
-                logger.info("Регистрация успешна!")
-                
-                # Получаем cookies
-                cookies = await self.context.cookies()
-                cookies_dict = {cookie['name']: cookie['value'] for cookie in cookies}
-                
-                # Сохраняем cookies в файл
-                import json
-                cookies_file = COOKIES_DIR / f"{email.replace('@', '_at_')}.json"
-                with open(cookies_file, 'w') as f:
-                    json.dump(cookies, f, indent=2)
-                
-                logger.info(f"Cookies сохранены в {cookies_file}")
-                
-                # Формируем результат
-                result = {
-                    "email": email,
-                    "password": password,
-                    "username": username,
-                    "cookies": cookies,
-                    "cookies_file": str(cookies_file),
-                    "proxy": str(self.proxy) if self.proxy else None,
-                    "success": True
-                }
-                
-                return result
-            else:
-                logger.error(f"Регистрация не удалась. Текущий URL: {current_url}")
-                return None
+            logger.info(f"Текущий URL после регистрации: {current_url}")
+            
+            # Получаем cookies
+            cookies = await self.context.cookies()
+            cookies_dict = {cookie['name']: cookie['value'] for cookie in cookies}
+            
+            # Сохраняем cookies в файл
+            import json
+            cookies_file = COOKIES_DIR / f"{email.replace('@', '_at_')}.json"
+            with open(cookies_file, 'w') as f:
+                json.dump(cookies, f, indent=2)
+            
+            logger.info(f"Cookies сохранены в {cookies_file}")
+            logger.info("✅ Регистрация завершена успешно!")
+            
+            # Формируем результат
+            result = {
+                "email": email,
+                "password": password,
+                "username": username,
+                "cookies": cookies,
+                "cookies_file": str(cookies_file),
+                "proxy": str(self.proxy) if self.proxy else None,
+                "success": True,
+                "final_url": current_url
+            }
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Критическая ошибка при регистрации: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
         finally:
             await self._close_browser()
