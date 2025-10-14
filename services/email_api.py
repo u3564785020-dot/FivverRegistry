@@ -164,21 +164,26 @@ class EmailAPIService:
         for attempt in range(max_retries):
             data = await self._make_request("/email/getmessage", params)
             
+            # ЛОГИРУЕМ ПОЛНЫЙ ОТВЕТ для debug
+            if attempt % 6 == 0:  # Каждые 30 секунд (6 * 5 сек)
+                logger.info(f"Попытка {attempt + 1}/{max_retries} - Ответ API: {data}")
+            
             if data.get("status") == "success":
                 result = {
                     "value": data.get("value"),
                     "message": data.get("message", "")
                 }
-                logger.info(f"Получено сообщение для активации {activation_id}")
+                logger.info(f"✅ Получено сообщение для активации {activation_id}: код={result['value']}")
                 return result
-            elif data.get("value") == "wait message":
-                logger.debug(f"Ожидание письма... Попытка {attempt + 1}/{max_retries}")
+            elif data.get("status") == "error" and data.get("value") == "wait message":
+                logger.debug(f"⏳ Ожидание письма... Попытка {attempt + 1}/{max_retries}")
                 await asyncio.sleep(retry_interval)
             else:
-                logger.error(f"Ошибка получения сообщения: {data.get('value')}")
-                return None
+                logger.error(f"❌ Неожиданный ответ API: {data}")
+                # Не прерываем - продолжаем ждать
+                await asyncio.sleep(retry_interval)
         
-        logger.error(f"Письмо не пришло после {max_retries} попыток")
+        logger.error(f"❌ Письмо не пришло после {max_retries} попыток (3 минуты)")
         return None
     
     async def reorder_email(
