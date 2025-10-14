@@ -671,10 +671,20 @@ class FiverrRegistrator:
             logger.info("Прохождение онбординга...")
             for i in range(3):
                 try:
-                    # Выбираем левый чекбокс (первый вариант)
-                    checkboxes = await self.page.query_selector_all('input[type="checkbox"], input[type="radio"]')
-                    if checkboxes:
-                        await checkboxes[0].click()
+                    # Выбираем левый чекбокс (первый вариант) через JS
+                    checkbox_clicked = await self.page.evaluate('''
+                        () => {
+                            const checkboxes = document.querySelectorAll('input[type="checkbox"], input[type="radio"]');
+                            if (checkboxes.length > 0) {
+                                checkboxes[0].click();
+                                return true;
+                            }
+                            return false;
+                        }
+                    ''')
+                    
+                    if checkbox_clicked:
+                        logger.debug(f"✅ Чекбокс выбран для вопроса {i+1}")
                         await self._wait_random(0.5, 1)
                     
                     # Нажимаем "Avanti" (role="button")
