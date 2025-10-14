@@ -229,11 +229,31 @@ class FiverrRegistrator:
             # Инициализируем браузер
             await self._init_browser()
             
-            # Заказываем почту
-            logger.info("Заказ email для регистрации...")
+            # Проверяем доступные почтовые домены для fiverr.com
+            logger.info("Проверка доступных почтовых доменов для fiverr.com...")
+            available_domains = await self.email_service.get_available_emails(site="fiverr.com")
+            
+            if not available_domains:
+                logger.error("Не удалось получить список доступных доменов")
+                return None
+            
+            # Выбираем первый домен с count > 0
+            selected_domain = None
+            for domain, info in available_domains.items():
+                if info.get("count", 0) > 0:
+                    selected_domain = domain
+                    logger.info(f"Выбран домен: {domain} (доступно: {info['count']} шт., цена: ${info['price']})")
+                    break
+            
+            if not selected_domain:
+                logger.error("Нет доступных почтовых доменов для fiverr.com")
+                return None
+            
+            # Заказываем почту с выбранным доменом
+            logger.info(f"Заказ email на домене {selected_domain}...")
             email_data = await self.email_service.order_email(
                 site="fiverr.com",
-                domain="gmx.com",
+                domain=selected_domain,
                 regex=r"\d{6}"  # Ищем 6-значный код в письме
             )
             
