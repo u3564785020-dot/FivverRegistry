@@ -560,33 +560,37 @@ class FiverrRegistrator:
                 return None
             
             # ШАГ 5: Нажимаем "Continua" (submit button)
-            logger.info("Отправка формы через JavaScript form.submit()...")
+            logger.info("Отправка формы через клик на кнопку Submit...")
             try:
-                # Отправляем форму напрямую через JavaScript (Enter и клики не работают!)
-                form_submitted = await self.page.evaluate('''
-                    async () => {
-                        const form = document.querySelector('form');
-                        if (form) {
-                            // Триггерим событие submit
-                            const submitEvent = new Event('submit', {
-                                bubbles: true,
-                                cancelable: true
-                            });
-                            form.dispatchEvent(submitEvent);
-                            
-                            // Если форма не отправилась - делаем submit напрямую
-                            if (form.checkValidity()) {
-                                form.submit();
-                                return true;
-                            }
-                            return false;
+                # НАХОДИМ и КЛИКАЕМ на кнопку Submit (form.submit() не работает - JS блокирует!)
+                submit_clicked = await self.page.evaluate('''
+                    () => {
+                        // Ищем кнопку submit по разным критериям
+                        const submitButton = 
+                            document.querySelector('button[type="submit"]') ||
+                            document.querySelector('button[data-track-tag="button"][type="submit"]') ||
+                            document.querySelector('form button[type="submit"]');
+                        
+                        if (submitButton) {
+                            // Кликаем через JavaScript
+                            submitButton.click();
+                            return true;
                         }
                         return false;
                     }
                 ''')
                 
-                if form_submitted:
-                    logger.info("✅ Форма отправлена через JavaScript!")
+                if submit_clicked:
+                    logger.info("✅ Кликнули на кнопку Submit!")
+                    
+                    # ЖДЕМ НАВИГАЦИИ (переход на следующую страницу)
+                    try:
+                        logger.info("Ожидание навигации после отправки формы...")
+                        await self.page.wait_for_load_state('networkidle', timeout=15000)
+                        logger.info("✅ Навигация завершена!")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Навигация не завершилась или завершилась раньше: {e}")
+                    
                     await self._wait_random(2, 3)
                     
                     # ПРОВЕРЯЕМ наличие ошибок валидации на странице
