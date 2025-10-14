@@ -256,37 +256,72 @@ class FiverrRegistrator:
             # ШАГ 3: Ждем и кликаем на кнопку "Continue with email/username"
             logger.info("Поиск кнопки 'Continue with email/username'...")
             try:
-                # Сначала ЖДЕМ появления кнопки (модальное окно должно загрузиться)
-                button_selectors = [
-                    'p[data-track-tag="text"]._ifhvih',  # Точный селектор из HTML
-                    'button:has(p[data-track-tag="text"])',  # Кнопка содержащая параграф
-                    'div:has(p._ifhvih)',  # Родительский div
-                ]
+                # Сначала ждем появления текста внутри кнопки
+                logger.info("Ожидание появления текста 'Continue with email/username'...")
+                text_selector = 'p[data-track-tag="text"]._ifhvih'
                 
-                button_found = False
-                button_selector = None
-                
-                # Пробуем найти кнопку (даем 15 секунд на загрузку модального окна)
-                for selector in button_selectors:
-                    try:
-                        await self.page.wait_for_selector(selector, timeout=15000, state='visible')
-                        button_selector = selector
-                        button_found = True
-                        logger.info(f"✅ Кнопка найдена: {selector}")
-                        break
-                    except:
-                        logger.debug(f"Кнопка не найдена через: {selector}")
-                        continue
-                
-                if not button_found:
-                    logger.error("❌ Кнопка 'Continue with email/username' не появилась за 15 секунд")
+                try:
+                    await self.page.wait_for_selector(text_selector, timeout=15000, state='visible')
+                    logger.info(f"✅ Текст кнопки найден: {text_selector}")
+                except Exception as e:
+                    logger.error(f"❌ Текст кнопки не появился за 15 секунд: {e}")
                     await self.email_service.cancel_email(activation_id)
                     return None
                 
-                # Теперь кликаем на найденную кнопку
-                logger.info("Клик на кнопку 'Continue with email/username'...")
-                await self.page.click(button_selector, timeout=5000)
-                logger.info(f"✅ Кликнули через: {button_selector}")
+                # Теперь находим родительский элемент (кнопку/div) и кликаем на него
+                logger.info("Поиск родительской кнопки для клика...")
+                
+                # Получаем элемент параграфа и его родителя через JavaScript
+                parent_element = await self.page.evaluate('''
+                    () => {
+                        const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
+                        if (!p) return null;
+                        
+                        // Ищем ближайший родительский элемент который можно кликнуть
+                        let parent = p.parentElement;
+                        while (parent) {
+                            const tag = parent.tagName.toLowerCase();
+                            if (tag === 'button' || tag === 'div' || tag === 'a') {
+                                return parent.outerHTML.substring(0, 200); // Для логирования
+                            }
+                            parent = parent.parentElement;
+                        }
+                        return null;
+                    }
+                ''')
+                
+                if parent_element:
+                    logger.info(f"✅ Родительский элемент найден: {parent_element[:100]}...")
+                else:
+                    logger.warning("⚠️ Родительский элемент не найден через JS")
+                
+                # Кликаем через JavaScript на родительский элемент
+                logger.info("Клик на кнопку через JavaScript...")
+                clicked = await self.page.evaluate('''
+                    () => {
+                        const p = document.querySelector('p[data-track-tag="text"]._ifhvih');
+                        if (!p) return false;
+                        
+                        // Ищем ближайший родительский элемент который можно кликнуть
+                        let parent = p.parentElement;
+                        while (parent) {
+                            const tag = parent.tagName.toLowerCase();
+                            if (tag === 'button' || tag === 'div' || tag === 'a') {
+                                parent.click();
+                                return true;
+                            }
+                            parent = parent.parentElement;
+                        }
+                        return false;
+                    }
+                ''')
+                
+                if not clicked:
+                    logger.error("❌ Не удалось кликнуть на кнопку через JavaScript")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
+                
+                logger.info("✅ Кликнули через JavaScript на родительский элемент")
                 
                 # ВАЖНО: Ждем загрузки формы после клика
                 logger.info("Ожидание загрузки формы email/password...")
