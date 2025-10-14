@@ -310,106 +310,40 @@ class FiverrRegistrator:
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # ШАГ 3: Ждем и кликаем на кнопку "Continue with email/username"
-            logger.info("Поиск кнопки 'Continue with email/username'...")
+            # ШАГ 3: Нажимаем на кнопку "Continue with email"
+            logger.info("Поиск кнопки 'Continue with email'...")
             try:
-                # Сначала ждем появления текста внутри кнопки
-                logger.info("Ожидание появления текста 'Continue with email/username'...")
-                text_selector = 'p[data-track-tag="text"]._ifhvih'
+                # ИЩЕМ кнопку с иконкой конверта (envelope_icon)
+                logger.info("Ожидание появления кнопки 'Continue with email'...")
+                await self.page.wait_for_selector('button[role="button"] svg[data-track-tag="envelope_icon"]', state='visible', timeout=15000)
+                logger.info("✅ Кнопка 'Continue with email' найдена")
                 
-                try:
-                    await self.page.wait_for_selector(text_selector, timeout=15000, state='visible')
-                    logger.info(f"✅ Текст кнопки найден: {text_selector}")
-                except Exception as e:
-                    logger.error(f"❌ Текст кнопки не появился за 15 секунд: {e}")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
-                
-                # Теперь находим родительский элемент (кнопку/div) и кликаем на него
-                logger.info("Поиск родительской кнопки для клика...")
-                
-                # ИЩЕМ КЛИКАБЕЛЬНЫЙ ЭЛЕМЕНТ (с cursor: pointer)
-                logger.info("Поиск КЛИКАБЕЛЬНОГО элемента с текстом кнопки...")
-                clickable_info = await self.page.evaluate('''
-                    () => {
-                        // Ищем ВСЕ <p> с data-track-tag="text"
-                        const allP = document.querySelectorAll('p[data-track-tag="text"]._ifhvih');
-                        
-                        const results = [];
-                        allP.forEach((p, index) => {
-                            // Ищем родителя с cursor: pointer
-                            let parent = p.parentElement;
-                            let depth = 0;
-                            let clickableParent = null;
-                            
-                            while (parent && depth < 10) {
-                                const style = window.getComputedStyle(parent);
-                                if (style.cursor === 'pointer' || parent.getAttribute('role') === 'button') {
-                                    clickableParent = {
-                                        tag: parent.tagName,
-                                        role: parent.getAttribute('role'),
-                                        cursor: style.cursor,
-                                        class: parent.className
-                                    };
-                                    break;
-                                }
-                                parent = parent.parentElement;
-                                depth++;
-                            }
-                            
-                            results.push({
-                                index: index,
-                                text: p.textContent.substring(0, 50),
-                                clickableParent: clickableParent
-                            });
-                        });
-                        
-                        return results;
-                    }
-                ''')
-                
-                logger.info(f"Найдено элементов: {clickable_info}")
-                
-                # Кликаем на родителя с cursor: pointer И текстом "email" или "username"
-                logger.info("Клик на кнопку 'Continue with email/username'...")
+                # Кликаем на кнопку с иконкой конверта
+                logger.info("Клик на кнопку 'Continue with email' через JavaScript...")
                 clicked = await self.page.evaluate('''
                     () => {
-                        // Ищем ВСЕ <p> с data-track-tag="text"
-                        const allP = document.querySelectorAll('p[data-track-tag="text"]._ifhvih');
+                        // Находим SVG с envelope_icon
+                        const svg = document.querySelector('svg[data-track-tag="envelope_icon"]');
                         
-                        for (const p of allP) {
-                            const text = p.textContent.toLowerCase();
-                            
-                            // Проверяем что текст содержит "email" или "username"
-                            if (!text.includes('email') && !text.includes('username')) {
-                                continue;
+                        if (svg) {
+                            // Ищем родительскую кнопку
+                            let parent = svg.parentElement;
+                            while (parent && parent.tagName !== 'BUTTON') {
+                                parent = parent.parentElement;
                             }
                             
-                            console.log('Найден нужный текст:', p.textContent);
-                            
-                            // Ищем родителя с cursor: pointer
-                            let parent = p.parentElement;
-                            let depth = 0;
-                            
-                            while (parent && depth < 10) {
-                                const style = window.getComputedStyle(parent);
-                                if (style.cursor === 'pointer' || parent.getAttribute('role') === 'button') {
-                                    console.log('Найден кликабельный элемент:', parent.tagName);
-                                    parent.click();
-                                    return true;
-                                }
-                                parent = parent.parentElement;
-                                depth++;
+                            if (parent && parent.tagName === 'BUTTON') {
+                                parent.click();
+                                return true;
                             }
                         }
                         
-                        console.log('Кнопка с email/username не найдена');
                         return false;
                     }
                 ''')
                 
                 if not clicked:
-                    logger.error("❌ Не найден кликабельный элемент с cursor: pointer")
+                    logger.error("❌ Не удалось кликнуть на кнопку")
                     await self.email_service.cancel_email(activation_id)
                     return None
                 
