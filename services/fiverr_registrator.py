@@ -112,6 +112,44 @@ class FiverrRegistrator:
         logger.error("Не удалось извлечь код из письма")
         return None
     
+    async def _js_click(self, selector: str, timeout: int = 10000) -> bool:
+        """
+        Клик на элемент через JavaScript (более надежный чем page.click)
+        
+        Args:
+            selector: CSS селектор элемента
+            timeout: Таймаут ожидания элемента в миллисекундах
+            
+        Returns:
+            True если клик успешен, False иначе
+        """
+        try:
+            # Ждем появления элемента
+            await self.page.wait_for_selector(selector, timeout=timeout, state='visible')
+            
+            # Кликаем через JavaScript
+            clicked = await self.page.evaluate(f'''
+                () => {{
+                    const element = document.querySelector('{selector}');
+                    if (element) {{
+                        element.click();
+                        return true;
+                    }}
+                    return false;
+                }}
+            ''')
+            
+            if clicked:
+                logger.debug(f"✅ JS клик успешен: {selector}")
+                return True
+            else:
+                logger.warning(f"⚠️ Элемент не найден для JS клика: {selector}")
+                return False
+                
+        except Exception as e:
+            logger.debug(f"❌ Ошибка JS клика на {selector}: {e}")
+            return False
+    
     async def _init_browser(self):
         """Инициализация браузера с настройками"""
         playwright = await async_playwright().start()
@@ -236,7 +274,9 @@ class FiverrRegistrator:
             logger.info("Клик на кнопку Sign in...")
             try:
                 # Селектор: a[href="/login?source=top_nav"]
-                await self.page.click('a.nav-link[href*="/login"]', timeout=15000)
+                clicked = await self._js_click('a.nav-link[href*="/login"]', timeout=15000)
+                if not clicked:
+                    raise Exception("Sign in button not clicked")
                 logger.info("✅ Кликнули на Sign in")
                 
                 # ВАЖНО: Ждем появления модального окна с опциями логина/регистрации
@@ -430,17 +470,14 @@ class FiverrRegistrator:
                 
                 clicked = False
                 for selector in selectors:
-                    try:
-                        await self.page.click(selector, timeout=5000)
+                    if await self._js_click(selector, timeout=5000):
                         clicked = True
-                        logger.info(f"Кликнули через селектор: {selector}")
+                        logger.info(f"✅ Кликнули Continua через: {selector}")
                         await self._wait_random(3, 5)
                         break
-                    except:
-                        continue
                 
                 if not clicked:
-                    logger.error("Не удалось нажать кнопку Continua")
+                    logger.error("❌ Не удалось нажать кнопку Continua")
                     await self.email_service.cancel_email(activation_id)
                     return None
                     
@@ -593,17 +630,14 @@ class FiverrRegistrator:
                 
                 clicked = False
                 for selector in selectors:
-                    try:
-                        await self.page.click(selector, timeout=5000)
+                    if await self._js_click(selector, timeout=5000):
                         clicked = True
-                        logger.info(f"Кликнули Invia через: {selector}")
+                        logger.info(f"✅ Кликнули Invia через: {selector}")
                         await self._wait_random(3, 5)
                         break
-                    except:
-                        continue
                 
                 if not clicked:
-                    logger.error("Не удалось нажать кнопку Invia")
+                    logger.error("❌ Не удалось нажать кнопку Invia")
                     return None
                 
             except Exception as e:
@@ -630,17 +664,14 @@ class FiverrRegistrator:
                     
                     clicked = False
                     for selector in selectors:
-                        try:
-                            await self.page.click(selector, timeout=5000)
+                        if await self._js_click(selector, timeout=5000):
                             clicked = True
-                            logger.info(f"Вопрос {i+1}/3 пройден")
+                            logger.info(f"✅ Вопрос {i+1}/3 пройден")
                             await self._wait_random(2, 3)
                             break
-                        except:
-                            continue
                     
                     if not clicked:
-                        logger.warning(f"Не удалось нажать кнопку на вопросе {i+1}, возможно онбординг завершен")
+                        logger.warning(f"⚠️ Не удалось нажать кнопку на вопросе {i+1}, возможно онбординг завершен")
                         break
                         
                 except Exception as e:
