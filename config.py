@@ -40,7 +40,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Browser Configuration
 BROWSER_HEADLESS = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
-BROWSER_TIMEOUT = int(os.getenv("BROWSER_TIMEOUT", "60000"))  # milliseconds
+BROWSER_TIMEOUT = int(os.getenv("BROWSER_TIMEOUT", "120000"))  # milliseconds (2 minutes)
 
 # Registration Settings
 MAX_CONCURRENT_REGISTRATIONS = int(os.getenv("MAX_CONCURRENT_REGISTRATIONS", "5"))

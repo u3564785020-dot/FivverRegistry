@@ -180,6 +180,16 @@ class FiverrRegistrator:
             Словарь с данными аккаунта или None в случае ошибки
         """
         try:
+            # Проверяем прокси перед началом (если указан)
+            if self.proxy:
+                logger.info(f"Проверка прокси {self.proxy}...")
+                from services.proxy_manager import ProxyManager
+                is_working = await ProxyManager.check_proxy(self.proxy, timeout=15)
+                if not is_working:
+                    logger.error(f"Прокси {self.proxy} не работает или слишком медленный!")
+                    return None
+                logger.info("✅ Прокси работает")
+            
             # Инициализируем браузер
             await self._init_browser()
             
@@ -207,18 +217,37 @@ class FiverrRegistrator:
             
             # ШАГ 1: Переходим на главную страницу Fiverr
             logger.info("Переход на fiverr.com...")
-            await self.page.goto("https://it.fiverr.com", wait_until="networkidle")
-            await self._wait_random(2, 3)
+            try:
+                # Используем менее строгое условие загрузки для медленных прокси
+                await self.page.goto("https://it.fiverr.com", wait_until="domcontentloaded", timeout=90000)
+                logger.info("Страница загружена, ожидание готовности...")
+                await self._wait_random(3, 5)
+            except Exception as e:
+                logger.error(f"Ошибка загрузки страницы: {e}")
+                logger.info("Пробуем альтернативный метод загрузки...")
+                try:
+                    # Пробуем без wait_until
+                    await self.page.goto("https://it.fiverr.com", timeout=90000)
+                    await self._wait_random(5, 7)
+                except Exception as e2:
+                    logger.error(f"Не удалось загрузить страницу: {e2}")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
             
             # ШАГ 2: Нажимаем на кнопку "Accedi" (Войти)
             logger.info("Клик на кнопку Accedi...")
             try:
-                await self.page.click('a[href*="/login"]', timeout=10000)
+                await self.page.click('a[href*="/login"]', timeout=15000)
                 await self._wait_random(2, 3)
             except:
-                logger.warning("Кнопка Accedi не найдена, переходим напрямую")
-                await self.page.goto("https://it.fiverr.com/login", wait_until="networkidle")
-                await self._wait_random(2, 3)
+                logger.warning("Кнопка Accedi не найдена, переходим напрямую на /login")
+                try:
+                    await self.page.goto("https://it.fiverr.com/login", wait_until="domcontentloaded", timeout=90000)
+                    await self._wait_random(3, 5)
+                except Exception as e:
+                    logger.error(f"Не удалось открыть страницу логина: {e}")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
             
             # ШАГ 3: Клик на "Continua con email/username"
             logger.info("Клик на 'Continua con email/username'...")
