@@ -579,31 +579,38 @@ class FiverrRegistrator:
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # ШАГ 6: Вводим username
+            # ШАГ 6: Вводим username (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!)
             logger.info(f"Ввод username: {username}...")
+            
+            # Ждем появления поля username (оно появляется после ввода email/password)
+            await self._wait_random(2, 3)
             
             # Точные селекторы из HTML
             username_input_selectors = [
                 'input#username',  # ID из HTML
                 'input[name="username"][maxlength="15"]',  # name + maxlength
-                'input[placeholder="mario_rossi"]',  # placeholder
+                'input[name="username"][type="text"]',  # name + type
+                'input[placeholder="john_smith"]',  # placeholder из HTML
                 'input[name="username"]',  # Универсальный fallback
             ]
             
             username_filled = False
             for selector in username_input_selectors:
                 try:
-                    await self.page.wait_for_selector(selector, timeout=10000)
+                    await self.page.wait_for_selector(selector, timeout=15000, state='visible')
                     await self.page.fill(selector, username)
                     username_filled = True
-                    logger.info(f"Username введен через селектор: {selector}")
+                    logger.info(f"✅ Username '{username}' введен через селектор: {selector}")
                     await self._wait_random(1, 2)
                     break
-                except:
+                except Exception as e:
+                    logger.debug(f"Селектор {selector} не сработал: {e}")
                     continue
             
             if not username_filled:
-                logger.warning("Поле username не найдено, возможно не требуется")
+                logger.error("❌ ОБЯЗАТЕЛЬНОЕ поле username не найдено!")
+                await self.email_service.cancel_email(activation_id)
+                return None
             
             # ШАГ 7: Нажимаем "Crea il mio account" (submit button)
             logger.info("Клик на кнопку создания аккаунта (submit)...")
