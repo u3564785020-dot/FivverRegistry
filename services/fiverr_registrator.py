@@ -353,14 +353,23 @@ class FiverrRegistrator:
                 
                 logger.info(f"Найдено элементов: {clickable_info}")
                 
-                # Кликаем на родителя с cursor: pointer
-                logger.info("Клик на кликабельный родительский элемент...")
+                # Кликаем на родителя с cursor: pointer И текстом "email" или "username"
+                logger.info("Клик на кнопку 'Continue with email/username'...")
                 clicked = await self.page.evaluate('''
                     () => {
                         // Ищем ВСЕ <p> с data-track-tag="text"
                         const allP = document.querySelectorAll('p[data-track-tag="text"]._ifhvih');
                         
                         for (const p of allP) {
+                            const text = p.textContent.toLowerCase();
+                            
+                            // Проверяем что текст содержит "email" или "username"
+                            if (!text.includes('email') && !text.includes('username')) {
+                                continue;
+                            }
+                            
+                            console.log('Найден нужный текст:', p.textContent);
+                            
                             // Ищем родителя с cursor: pointer
                             let parent = p.parentElement;
                             let depth = 0;
@@ -368,7 +377,7 @@ class FiverrRegistrator:
                             while (parent && depth < 10) {
                                 const style = window.getComputedStyle(parent);
                                 if (style.cursor === 'pointer' || parent.getAttribute('role') === 'button') {
-                                    console.log('Найден кликабельный элемент:', parent.tagName, 'с текстом:', p.textContent.substring(0, 30));
+                                    console.log('Найден кликабельный элемент:', parent.tagName);
                                     parent.click();
                                     return true;
                                 }
@@ -377,7 +386,7 @@ class FiverrRegistrator:
                             }
                         }
                         
-                        console.log('Кликабельный элемент не найден');
+                        console.log('Кнопка с email/username не найдена');
                         return false;
                     }
                 ''')
