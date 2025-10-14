@@ -59,26 +59,53 @@ class FiverrRegistrator:
     
     def _generate_username(self, base_name: str = None) -> str:
         """
-        Генерация username в формате text_text (например, Loreisa_browns)
+        Генерация ПОЛНОСТЬЮ СЛУЧАЙНОГО username (каждый раз новый)
         
         Args:
-            base_name: Базовое имя из email (опционально)
+            base_name: Базовое имя из email (НЕ используется - полная рандомизация)
             
         Returns:
             Сгенерированный username
         """
-        if base_name:
-            # Используем имя из email если есть
-            parts = base_name.lower().split('_')
-            if len(parts) >= 2:
-                return base_name.lower()
+        # ПОЛНАЯ рандомизация - большой список имен
+        first_names = [
+            'james', 'john', 'robert', 'michael', 'william', 'david', 'richard', 'joseph',
+            'thomas', 'charles', 'chris', 'daniel', 'matthew', 'anthony', 'mark', 'donald',
+            'steven', 'paul', 'andrew', 'joshua', 'kenneth', 'kevin', 'brian', 'george',
+            'mary', 'patricia', 'jennifer', 'linda', 'barbara', 'elizabeth', 'susan', 'jessica',
+            'sarah', 'karen', 'nancy', 'lisa', 'betty', 'margaret', 'sandra', 'ashley',
+            'alex', 'sam', 'taylor', 'jordan', 'casey', 'morgan', 'jamie', 'riley',
+            'loreisa', 'maria', 'anna', 'emma', 'sophia', 'olivia', 'ava', 'isabella'
+        ]
         
-        # Генерируем случайное имя
-        first_names = ['loreisa', 'maria', 'john', 'anna', 'david', 'sarah', 'michael', 'emma']
-        last_names = ['browns', 'smith', 'johnson', 'wilson', 'taylor', 'anderson', 'thomas']
+        last_names = [
+            'smith', 'johnson', 'williams', 'brown', 'jones', 'garcia', 'miller', 'davis',
+            'rodriguez', 'martinez', 'hernandez', 'lopez', 'gonzalez', 'wilson', 'anderson',
+            'thomas', 'taylor', 'moore', 'jackson', 'martin', 'lee', 'thompson', 'white',
+            'harris', 'clark', 'lewis', 'robinson', 'walker', 'young', 'allen', 'king',
+            'wright', 'scott', 'torres', 'nguyen', 'hill', 'flores', 'green', 'adams',
+            'browns', 'wilson', 'anderson', 'thomas'
+        ]
         
-        username = f"{random.choice(first_names)}_{random.choice(last_names)}"
-        logger.debug(f"Сгенерирован username: {username}")
+        # ВСЕГДА случайный выбор
+        first = random.choice(first_names)
+        last = random.choice(last_names)
+        
+        # Случайный формат: firstname_lastname, firstnamelastname, или с цифрами
+        format_choice = random.randint(1, 3)
+        
+        if format_choice == 1:
+            username = f"{first}_{last}"
+        elif format_choice == 2:
+            username = f"{first}{last}"
+        else:
+            if random.choice([True, False]):
+                username = f"{first}_{last[:4]}{random.randint(10, 99)}"
+            else:
+                username = f"{first}{random.randint(100, 999)}"
+        
+        username = username[:15]  # Fiverr limit
+        logger.debug(f"Сгенерирован случайный username: {username}")
         return username
     
     def _extract_code_from_html(self, html_content: str) -> Optional[str]:
