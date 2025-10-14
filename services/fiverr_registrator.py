@@ -388,30 +388,41 @@ class FiverrRegistrator:
                     return None
                 
                 logger.info("✅ Кликнули на кликабельный элемент")
-                await self._wait_random(2, 3)
                 
-                logger.info("✅ Кликнули через JavaScript на родительский элемент")
+                # ВАЖНО: Форма открывается в модальном окне (URL НЕ меняется!)
+                # Ждем появления полей ввода СРАЗУ после клика
+                logger.info("Ожидание появления полей ввода в модальном окне...")
+                await self._wait_random(1, 2)
                 
-                # ВАЖНО: Ждем загрузки формы после клика
-                logger.info("Ожидание загрузки формы email/password...")
-                await self._wait_random(3, 5)
-                
-                # Логируем текущий URL для отладки
-                current_url = self.page.url
-                logger.info(f"Текущий URL: {current_url}")
-                
-                # Ждем появления поля email (может загружаться динамически)
-                logger.info("Ожидание появления полей ввода...")
                 try:
                     await self.page.wait_for_selector(
                         'input#identification-usernameOrEmail, input[name="usernameOrEmail"]',
-                        timeout=30000,
+                        timeout=15000,
                         state='visible'
                     )
-                    logger.info("✅ Поля формы загрузились")
+                    logger.info("✅ Форма email/password загрузилась!")
                 except Exception as e:
-                    logger.error(f"❌ Форма не загрузилась за 30 секунд: {e}")
-                    logger.error(f"Текущий URL: {self.page.url}")
+                    logger.error(f"❌ Форма не появилась за 15 секунд: {e}")
+                    
+                    # Debug: Проверяем что есть на странице
+                    logger.error("Проверка наличия модального окна...")
+                    modal_check = await self.page.evaluate('''
+                        () => {
+                            const allInputs = document.querySelectorAll('input');
+                            const inputs = [];
+                            allInputs.forEach(input => {
+                                inputs.push({
+                                    type: input.type,
+                                    name: input.name,
+                                    id: input.id,
+                                    visible: input.offsetParent !== null
+                                });
+                            });
+                            return inputs;
+                        }
+                    ''')
+                    logger.error(f"Все input на странице: {modal_check}")
+                    
                     await self.email_service.cancel_email(activation_id)
                     return None
                     
