@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Environment
+.env
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Cookies (не нужны в образе)
+cookies/
+
+# Temp
+temp/
+tmp/
+
+# Documentation
+README.md
+*.md
+
