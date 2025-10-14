@@ -283,37 +283,38 @@ class FiverrRegistrator:
             # ШАГ 4: Заполняем email и пароль
             logger.info("Заполнение email и пароля...")
             
-            # Вводим email
+            # Вводим email - точные селекторы из HTML
             email_input_selectors = [
-                'input[type="email"]',
-                'input[name="email"]',
-                'input[placeholder*="Email"]',
-                'input[placeholder*="email"]'
+                'input#identification-usernameOrEmail',  # ID из HTML
+                'input[name="usernameOrEmail"]',  # name из HTML
+                'input[autocomplete="email"]',  # autocomplete атрибут
+                'input[type="text"][data-track-tag="input"]',  # Универсальный
             ]
             
             email_filled = False
             for selector in email_input_selectors:
                 try:
-                    await self.page.wait_for_selector(selector, timeout=5000)
+                    await self.page.wait_for_selector(selector, timeout=10000)
                     await self.page.fill(selector, email)
                     email_filled = True
-                    logger.info(f"Email введен через селектор: {selector}")
+                    logger.info(f"✅ Email введен через селектор: {selector}")
                     await self._wait_random(1, 2)
                     break
-                except:
+                except Exception as e:
+                    logger.debug(f"Селектор {selector} не сработал: {e}")
                     continue
             
             if not email_filled:
-                logger.error("Не удалось найти поле email")
+                logger.error("❌ Не удалось найти поле email")
                 await self.email_service.cancel_email(activation_id)
                 return None
             
-            # Вводим пароль
+            # Вводим пароль - точные селекторы из HTML
             password_input_selectors = [
-                'input[type="password"]',
-                'input[name="password"]',
-                'input[placeholder*="Password"]',
-                'input[placeholder*="password"]'
+                'input#identification-password',  # ID из HTML
+                'input[name="password"][autocomplete="current-password"]',  # name + autocomplete
+                'input[type="password"][data-track-tag="input"]',  # type + data-track
+                'input[type="password"]',  # Универсальный fallback
             ]
             
             password_filled = False
@@ -321,14 +322,15 @@ class FiverrRegistrator:
                 try:
                     await self.page.fill(selector, password)
                     password_filled = True
-                    logger.info(f"Пароль введен через селектор: {selector}")
+                    logger.info(f"✅ Пароль введен через селектор: {selector}")
                     await self._wait_random(1, 2)
                     break
-                except:
+                except Exception as e:
+                    logger.debug(f"Селектор {selector} не сработал: {e}")
                     continue
             
             if not password_filled:
-                logger.error("Не удалось найти поле пароля")
+                logger.error("❌ Не удалось найти поле пароля")
                 await self.email_service.cancel_email(activation_id)
                 return None
             
@@ -366,17 +368,18 @@ class FiverrRegistrator:
             # ШАГ 6: Вводим username
             logger.info(f"Ввод username: {username}...")
             
+            # Точные селекторы из HTML
             username_input_selectors = [
-                'input[name="username"]',
-                'input[placeholder*="username"]',
-                'input[placeholder*="nome"]',
-                'input[type="text"]'
+                'input#username',  # ID из HTML
+                'input[name="username"][maxlength="15"]',  # name + maxlength
+                'input[placeholder="mario_rossi"]',  # placeholder
+                'input[name="username"]',  # Универсальный fallback
             ]
             
             username_filled = False
             for selector in username_input_selectors:
                 try:
-                    await self.page.wait_for_selector(selector, timeout=5000)
+                    await self.page.wait_for_selector(selector, timeout=10000)
                     await self.page.fill(selector, username)
                     username_filled = True
                     logger.info(f"Username введен через селектор: {selector}")
@@ -444,33 +447,55 @@ class FiverrRegistrator:
             # ШАГ 9: Вводим код подтверждения (6 цифр)
             logger.info("Ввод кода подтверждения...")
             
-            # Ищем поля для ввода кода (может быть 6 отдельных полей или одно поле)
+            # Ищем поля для ввода кода - точные селекторы из HTML
             try:
-                # Пробуем найти отдельные поля для каждой цифры
-                code_inputs = await self.page.query_selector_all('input[type="text"]')
+                # Пробуем найти поля для одноразового кода
+                code_inputs = await self.page.query_selector_all('input[autocomplete="one-time-code"]')
                 
-                if len(code_inputs) == 6:
-                    # 6 отдельных полей - вводим по одной цифре
-                    for i, digit in enumerate(confirmation_code):
-                        await code_inputs[i].fill(digit)
-                        await self._wait_random(0.2, 0.5)
-                else:
+                # Если не нашли по autocomplete, пробуем другие селекторы
+                if not code_inputs:
+                    code_inputs = await self.page.query_selector_all('input[inputmode="numeric"][pattern="[0-9]*"]')
+                
+                if not code_inputs:
+                    code_inputs = await self.page.query_selector_all('input[maxlength="6"][type="text"]')
+                
+                if len(code_inputs) >= 6:
+                    # 6 отдельных полей - вводим целый код в первое поле
+                    # Fiverr автоматически распределит цифры по полям
+                    logger.info("Найдено 6 полей для кода, вводим весь код в первое поле...")
+                    await code_inputs[0].fill(confirmation_code)
+                    logger.info(f"✅ Код {confirmation_code} введен")
+                    await self._wait_random(1, 2)
+                elif len(code_inputs) == 1:
                     # Одно поле - вводим весь код
+                    logger.info("Найдено одно поле для кода...")
+                    await code_inputs[0].fill(confirmation_code)
+                    logger.info(f"✅ Код {confirmation_code} введен")
+                    await self._wait_random(1, 2)
+                else:
+                    # Fallback - пробуем общие селекторы
+                    logger.warning(f"Найдено {len(code_inputs)} полей для кода, пробуем fallback селекторы...")
                     code_selectors = [
                         'input[name="code"]',
                         'input[placeholder*="codice"]',
                         'input[placeholder*="code"]',
-                        'input[type="text"]'
+                        'input[type="text"][data-track-tag="input"]'
                     ]
                     
+                    filled = False
                     for selector in code_selectors:
                         try:
                             await self.page.fill(selector, confirmation_code)
-                            logger.info(f"Код введен через селектор: {selector}")
+                            logger.info(f"✅ Код введен через селектор: {selector}")
                             await self._wait_random(1, 2)
+                            filled = True
                             break
                         except:
                             continue
+                    
+                    if not filled:
+                        logger.error("❌ Не удалось найти поле для кода")
+                        return None
                 
                 # ШАГ 10: Нажимаем "Invia" (submit/role button)
                 logger.info("Клик на кнопку Invia...")
