@@ -60,29 +60,33 @@ class FiverrRegistrator:
     def _generate_username(self, base_name: str = None) -> str:
         """
         Генерация СЛУЧАЙНОГО НАБОРА СИМВОЛОВ в формате: xxxxx_yyyyy
+        МАКСИМУМ 15 символов (лимит Fiverr)!
         
         Args:
             base_name: Не используется
             
         Returns:
-            Случайный username типа psodx_iusyds (text_text)
+            Случайный username типа psodx_iusyds (text_text), max 15 chars
         """
         # Генерируем случайные строки из букв
         letters = 'abcdefghijklmnopqrstuvwxyz'
         
-        # Первая часть: 5-7 случайных букв
-        first_part_length = random.randint(5, 7)
+        # Первая часть: 5-6 букв (чтобы влезло в 15 с подчеркиванием)
+        first_part_length = random.randint(5, 6)
         first_part = ''.join(random.choice(letters) for _ in range(first_part_length))
         
-        # Вторая часть: подбираем длину, чтобы всего было максимум 15 символов
+        # Вторая часть: точно вычисляем чтобы НЕ ПРЕВЫСИТЬ 15 символов
         # 15 - len(first_part) - 1 (подчеркивание) = длина второй части
-        max_second_length = 15 - first_part_length - 1
-        second_part_length = random.randint(5, min(7, max_second_length))
+        second_part_length = 15 - first_part_length - 1  # Ровно 15!
         second_part = ''.join(random.choice(letters) for _ in range(second_part_length))
         
         username = f"{first_part}_{second_part}"
         
-        logger.debug(f"Сгенерирован случайный username: {username}")
+        # Проверка что не больше 15
+        if len(username) > 15:
+            username = username[:15]
+        
+        logger.debug(f"Сгенерирован случайный username: {username} (длина: {len(username)})")
         return username
     
     def _extract_code_from_html(self, html_content: str) -> Optional[str]:
@@ -583,7 +587,16 @@ class FiverrRegistrator:
                 
                 if form_submitted:
                     logger.info("✅ Форма отправлена через JavaScript!")
-                    await self._wait_random(6, 8)
+                    
+                    # Ждем пока ИСЧЕЗНУТ старые поля email/password
+                    try:
+                        logger.info("Ожидание исчезновения формы email/password...")
+                        await self.page.wait_for_selector('input#identification-password', state='hidden', timeout=10000)
+                        logger.info("✅ Форма email/password исчезла")
+                    except:
+                        logger.warning("⚠️ Старая форма не исчезла или уже исчезла")
+                    
+                    await self._wait_random(3, 5)
                 else:
                     logger.error("❌ Форма не валидна или не найдена!")
                     # Логируем текст страницы для диагностики
@@ -603,8 +616,19 @@ class FiverrRegistrator:
             # ШАГ 6: Вводим username (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!) с проверкой на занятость
             logger.info(f"Ввод username: {username}...")
             
-            # Ждем появления поля username (оно появляется после ввода email/password)
-            await self._wait_random(3, 5)
+            # ЯВНО ЖДЕМ появления поля username
+            logger.info("Ожидание появления поля username...")
+            try:
+                await self.page.wait_for_selector('input#username', state='visible', timeout=30000)
+                logger.info("✅ Поле username появилось!")
+            except Exception as e:
+                logger.error(f"❌ Поле username не появилось за 30 секунд: {e}")
+                # DEBUG: показываем что есть на странице
+                try:
+                    page_html = await self.page.content()
+                    logger.error(f"HTML страницы (первые 1000 символов): {page_html[:1000]}")
+                except:
+                    pass
             
             # Точные селекторы из HTML (БЕЗ placeholder - это просто текст для примера!)
             username_input_selectors = [
