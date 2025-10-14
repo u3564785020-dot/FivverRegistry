@@ -59,48 +59,30 @@ class FiverrRegistrator:
     
     def _generate_username(self, base_name: str = None) -> str:
         """
-        Генерация username СТРОГО В ФОРМАТЕ: firstname_lastname
+        Генерация СЛУЧАЙНОГО НАБОРА СИМВОЛОВ в формате: xxxxx_yyyyy
         
         Args:
-            base_name: Базовое имя из email (НЕ используется - полная рандомизация)
+            base_name: Не используется
             
         Returns:
-            Сгенерированный username в формате firstname_lastname
+            Случайный username типа psodx_iusyds (text_text)
         """
-        # ПОЛНАЯ рандомизация - большой список имен
-        first_names = [
-            'james', 'john', 'robert', 'michael', 'william', 'david', 'richard', 'joseph',
-            'thomas', 'charles', 'chris', 'daniel', 'matthew', 'anthony', 'mark', 'donald',
-            'steven', 'paul', 'andrew', 'joshua', 'kenneth', 'kevin', 'brian', 'george',
-            'mary', 'patricia', 'jennifer', 'linda', 'barbara', 'elizabeth', 'susan', 'jessica',
-            'sarah', 'karen', 'nancy', 'lisa', 'betty', 'margaret', 'sandra', 'ashley',
-            'alex', 'sam', 'taylor', 'jordan', 'casey', 'morgan', 'jamie', 'riley',
-            'loreisa', 'maria', 'anna', 'emma', 'sophia', 'olivia', 'ava', 'isabella'
-        ]
+        # Генерируем случайные строки из букв
+        letters = 'abcdefghijklmnopqrstuvwxyz'
         
-        last_names = [
-            'smith', 'johnson', 'williams', 'brown', 'jones', 'garcia', 'miller', 'davis',
-            'rodriguez', 'martinez', 'hernandez', 'lopez', 'gonzalez', 'wilson', 'anderson',
-            'thomas', 'taylor', 'moore', 'jackson', 'martin', 'lee', 'thompson', 'white',
-            'harris', 'clark', 'lewis', 'robinson', 'walker', 'young', 'allen', 'king',
-            'wright', 'scott', 'torres', 'nguyen', 'hill', 'flores', 'green', 'adams',
-            'browns'
-        ]
+        # Первая часть: 5-7 случайных букв
+        first_part_length = random.randint(5, 7)
+        first_part = ''.join(random.choice(letters) for _ in range(first_part_length))
         
-        # ВСЕГДА случайный выбор
-        first = random.choice(first_names)
-        last = random.choice(last_names)
+        # Вторая часть: подбираем длину, чтобы всего было максимум 15 символов
+        # 15 - len(first_part) - 1 (подчеркивание) = длина второй части
+        max_second_length = 15 - first_part_length - 1
+        second_part_length = random.randint(5, min(7, max_second_length))
+        second_part = ''.join(random.choice(letters) for _ in range(second_part_length))
         
-        # ТОЛЬКО ФОРМАТ: firstname_lastname (с подчеркиванием!)
-        username = f"{first}_{last}"
+        username = f"{first_part}_{second_part}"
         
-        # Если длиннее 15 символов (лимит Fiverr) - обрезаем фамилию
-        if len(username) > 15:
-            # Оставляем имя + _ + часть фамилии, чтобы сохранить формат
-            max_last_name_len = 15 - len(first) - 1  # -1 для подчеркивания
-            username = f"{first}_{last[:max_last_name_len]}"
-        
-        logger.debug(f"Сгенерирован username: {username}")
+        logger.debug(f"Сгенерирован случайный username: {username}")
         return username
     
     def _extract_code_from_html(self, html_content: str) -> Optional[str]:
