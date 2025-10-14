@@ -299,28 +299,16 @@ class FiverrRegistrator:
                     await self.email_service.cancel_email(activation_id)
                     return None
             
-            # ШАГ 2: Нажимаем на кнопку "Join" (Iscriviti/Регистрация)
-            logger.info("Клик на кнопку Join (Sign Up)...")
+            # ШАГ 2: ВСЕГДА переходим на /join (страница регистрации)
+            logger.info("Переход на страницу регистрации /join...")
             try:
-                # Селектор: a[href="/join?source=top_nav"] или кнопка Join в навбаре
-                clicked = await self._js_click('a.nav-link[href*="/join"]', timeout=15000)
-                if not clicked:
-                    raise Exception("Join button not clicked")
-                logger.info("✅ Кликнули на Join")
-                
-                # ВАЖНО: Ждем появления модального окна с опциями регистрации
-                logger.info("Ожидание появления модального окна с опциями...")
-                await self._wait_random(2, 4)
-                
-            except:
-                logger.warning("Кнопка Join не найдена, переходим напрямую на /join")
-                try:
-                    await self.page.goto("https://it.fiverr.com/join", wait_until="domcontentloaded", timeout=90000)
-                    await self._wait_random(3, 5)
-                except Exception as e:
-                    logger.error(f"Не удалось открыть страницу логина: {e}")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
+                await self.page.goto("https://it.fiverr.com/join", wait_until="domcontentloaded", timeout=90000)
+                logger.info("✅ Страница /join загружена")
+                await self._wait_random(3, 5)
+            except Exception as e:
+                logger.error(f"Не удалось открыть страницу регистрации: {e}")
+                await self.email_service.cancel_email(activation_id)
+                return None
             
             # ШАГ 3: Ждем и кликаем на кнопку "Continue with email/username"
             logger.info("Поиск кнопки 'Continue with email/username'...")
