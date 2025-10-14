@@ -589,12 +589,11 @@ class FiverrRegistrator:
             # Ждем появления поля username (оно появляется после ввода email/password)
             await self._wait_random(3, 5)
             
-            # Точные селекторы из HTML
+            # Точные селекторы из HTML (БЕЗ placeholder - это просто текст для примера!)
             username_input_selectors = [
-                'input#username',  # ID из HTML
+                'input#username',  # ID из HTML - САМЫЙ НАДЕЖНЫЙ
                 'input[name="username"][maxlength="15"]',  # name + maxlength
                 'input[name="username"][type="text"]',  # name + type
-                'input[placeholder="mario_rossi"]',  # placeholder из HTML (итальянский)
                 'input[data-track-tag="input"][name="username"]',  # data-track-tag + name
                 'input[name="username"]',  # Универсальный fallback
             ]
