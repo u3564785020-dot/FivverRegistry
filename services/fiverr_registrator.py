@@ -515,22 +515,45 @@ class FiverrRegistrator:
             # ШАГ 7: Нажимаем "Crea il mio account" (submit button)
             logger.info("Клик на кнопку создания аккаунта (submit)...")
             try:
-                # Селектор: button[type="submit"][data-track-tag="button"]
-                # Это вторая submit кнопка на странице
-                submit_buttons = await self.page.query_selector_all('button[type="submit"]')
+                # Пробуем разные селекторы через JS
+                selectors = [
+                    'button[type="submit"][data-track-tag="button"]',
+                    'button[type="submit"]',
+                ]
                 
-                if len(submit_buttons) >= 2:
-                    # Кликаем на вторую submit кнопку (для создания аккаунта)
-                    await submit_buttons[1].click()
-                    logger.info("Кликнули на вторую submit кнопку")
-                elif len(submit_buttons) == 1:
-                    # Если только одна - кликаем на нее
-                    await submit_buttons[0].click()
-                    logger.info("Кликнули на единственную submit кнопку")
-                else:
-                    # Пробуем через data-track-tag
-                    await self.page.click('button[data-track-tag="button"][type="submit"]', timeout=5000)
-                    logger.info("Кликнули через data-track-tag")
+                clicked = False
+                for selector in selectors:
+                    # Проверяем сколько кнопок с таким селектором
+                    button_count = await self.page.evaluate(f'''
+                        () => document.querySelectorAll('{selector}').length
+                    ''')
+                    
+                    if button_count >= 2:
+                        # Кликаем на вторую кнопку через JS
+                        clicked = await self.page.evaluate(f'''
+                            () => {{
+                                const buttons = document.querySelectorAll('{selector}');
+                                if (buttons.length >= 2) {{
+                                    buttons[1].click();
+                                    return true;
+                                }}
+                                return false;
+                            }}
+                        ''')
+                        if clicked:
+                            logger.info(f"✅ Кликнули на вторую submit кнопку: {selector}")
+                            break
+                    elif button_count == 1:
+                        # Кликаем на единственную через JS
+                        if await self._js_click(selector, timeout=5000):
+                            clicked = True
+                            logger.info(f"✅ Кликнули на единственную submit кнопку: {selector}")
+                            break
+                
+                if not clicked:
+                    logger.error("❌ Не удалось нажать кнопку создания аккаунта")
+                    await self.email_service.cancel_email(activation_id)
+                    return None
                 
                 await self._wait_random(3, 5)
                     
