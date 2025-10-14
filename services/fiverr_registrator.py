@@ -556,30 +556,32 @@ class FiverrRegistrator:
                 return None
             
             # ШАГ 5: Нажимаем "Continua" (submit button)
-            logger.info("Клик на кнопку Continua (submit)...")
+            logger.info("Отправка формы email/password через Enter...")
             try:
-                # Селектор: button[type="submit"][data-track-tag="button"]
-                selectors = [
-                    'button[type="submit"][data-track-tag="button"]',
-                    'button[type="submit"]._arosdn',  # Класс из HTML
-                    'button[type="submit"]',
-                ]
-                
-                clicked = False
-                for selector in selectors:
-                    if await self._js_click(selector, timeout=5000):
-                        clicked = True
-                        logger.info(f"✅ Кликнули Continua через: {selector}")
-                        await self._wait_random(3, 5)
-                        break
-                
-                if not clicked:
-                    logger.error("❌ Не удалось нажать кнопку Continua")
+                # ОТПРАВЛЯЕМ ФОРМУ ЧЕРЕЗ ENTER (не клик на кнопку - она не работает!)
+                password_field = await self.page.query_selector('input#identification-password')
+                if password_field:
+                    logger.info("✅ Нажимаем Enter в поле password для отправки формы...")
+                    await password_field.press('Enter')
+                    await self._wait_random(5, 7)
+                else:
+                    logger.error("❌ Поле password не найдено!")
                     await self.email_service.cancel_email(activation_id)
                     return None
+                
+                # Проверяем есть ли ошибки валидации
+                try:
+                    page_text = await self.page.evaluate('() => document.body.innerText')
+                    error_keywords = ['error', 'invalid', 'incorrect', 'wrong', 'errore', 'non valido', 'sbagliato']
+                    has_error = any(keyword in page_text.lower() for keyword in error_keywords)
+                    
+                    if has_error:
+                        logger.error(f"⚠️ Обнаружена ошибка на странице! Текст: {page_text[:300]}")
+                except:
+                    pass
                     
             except Exception as e:
-                logger.error(f"Ошибка клика на Continua: {e}")
+                logger.error(f"Ошибка отправки формы: {e}")
                 await self.email_service.cancel_email(activation_id)
                 return None
             
