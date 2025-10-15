@@ -174,6 +174,15 @@ class FiverrWorkingRegistrator:
         try:
             logger.info("Запускаем браузер для обхода капчи...")
             
+            # Убиваем все процессы Chrome перед запуском
+            import subprocess
+            try:
+                subprocess.run(["pkill", "-f", "chrome"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-f", "chromedriver"], check=False, capture_output=True)
+                await asyncio.sleep(1)
+            except:
+                pass
+            
             # Настройки Chrome
             options = Options()
             options.add_argument('--no-sandbox')
@@ -183,6 +192,15 @@ class FiverrWorkingRegistrator:
             options.add_argument('--disable-blink-features=AutomationControlled')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
+            
+            # Уникальный user-data-dir для каждого браузера
+            import uuid
+            unique_id = uuid.uuid4().hex[:8]
+            user_data_dir = f"/tmp/chrome_user_data_{unique_id}"
+            options.add_argument(f'--user-data-dir={user_data_dir}')
+            options.add_argument('--incognito')
+            options.add_argument('--no-first-run')
+            options.add_argument('--disable-default-apps')
             
             # Случайный User-Agent
             user_agent = self._get_random_user_agent()
@@ -418,6 +436,15 @@ class FiverrWorkingRegistrator:
                     logger.info("Браузер закрыт")
                 except:
                     pass
+            
+            # Очищаем временные файлы
+            try:
+                import shutil
+                if 'user_data_dir' in locals():
+                    shutil.rmtree(user_data_dir, ignore_errors=True)
+                    logger.info(f"Временные файлы очищены: {user_data_dir}")
+            except:
+                pass
 
     async def _take_captcha_screenshot(self, url: str = "https://it.fiverr.com/") -> Optional[bytes]:
         """Сделать скриншот страницы с капчей"""
@@ -429,6 +456,15 @@ class FiverrWorkingRegistrator:
         try:
             logger.info("Запускаем браузер для скриншота капчи...")
             
+            # Убиваем все процессы Chrome перед запуском
+            import subprocess
+            try:
+                subprocess.run(["pkill", "-f", "chrome"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-f", "chromedriver"], check=False, capture_output=True)
+                await asyncio.sleep(1)
+            except:
+                pass
+            
             # Настройки Chrome
             options = Options()
             options.add_argument('--headless')
@@ -439,6 +475,15 @@ class FiverrWorkingRegistrator:
             options.add_argument('--disable-blink-features=AutomationControlled')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
+            
+            # Уникальный user-data-dir для каждого браузера
+            import uuid
+            unique_id = uuid.uuid4().hex[:8]
+            user_data_dir = f"/tmp/chrome_screenshot_{unique_id}"
+            options.add_argument(f'--user-data-dir={user_data_dir}')
+            options.add_argument('--incognito')
+            options.add_argument('--no-first-run')
+            options.add_argument('--disable-default-apps')
             
             # Добавляем прокси если есть (только для HTTP запросов, не для Selenium)
             # Chrome не поддерживает прокси с аутентификацией через --proxy-server
@@ -468,7 +513,7 @@ class FiverrWorkingRegistrator:
             
             logger.info(f"Скриншот сделан, размер: {len(screenshot)} байт")
             return screenshot
-            
+                    
         except Exception as e:
             logger.error(f"Ошибка при создании скриншота: {e}")
             return None
@@ -479,6 +524,15 @@ class FiverrWorkingRegistrator:
                     logger.info("Браузер закрыт")
                 except:
                     pass
+            
+            # Очищаем временные файлы
+            try:
+                import shutil
+                if 'user_data_dir' in locals():
+                    shutil.rmtree(user_data_dir, ignore_errors=True)
+                    logger.info(f"Временные файлы скриншота очищены: {user_data_dir}")
+            except:
+                pass
         
     async def __aenter__(self):
         """Асинхронный контекстный менеджер - вход"""
