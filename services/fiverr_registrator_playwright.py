@@ -420,21 +420,88 @@ class FiverrRegistrator:
             # Ждем загрузки PerimeterX
             await asyncio.sleep(3)
             
-            # Ищем кнопку для зажатия (не просто элемент!)
+            # Ищем кнопку для зажатия - МАКСИМАЛЬНОЕ КОЛИЧЕСТВО СЕЛЕКТОРОВ!
             button_selectors = [
+                # PerimeterX специфичные селекторы
                 "button[class*='px-captcha']",
                 "div[class*='px-captcha'] button",
                 "button[id*='px-captcha']",
+                "div[id*='px-captcha'] button",
+                "button[class*='captcha']",
+                "div[class*='captcha'] button",
+                "button[id*='captcha']",
+                "div[id*='captcha'] button",
+                
+                # PRESS & HOLD селекторы
+                "button[class*='press']",
+                "button[class*='hold']",
+                "div[class*='press']",
+                "div[class*='hold']",
+                "button:has-text('PRESS')",
+                "button:has-text('HOLD')",
+                "div:has-text('PRESS')",
+                "div:has-text('HOLD')",
+                
+                # Общие кнопки
+                "button[type='button']",
+                "button[type='submit']",
+                "input[type='button']",
+                "input[type='submit']",
+                "button",
+                "div[role='button']",
+                "span[role='button']",
+                
+                # XPath селекторы
                 "//button[contains(@class, 'px-captcha')]",
                 "//div[contains(@class, 'px-captcha')]//button",
+                "//button[contains(@id, 'px-captcha')]",
+                "//div[contains(@id, 'px-captcha')]//button",
+                "//button[contains(@class, 'captcha')]",
+                "//div[contains(@class, 'captcha')]//button",
                 "//button[contains(text(), 'PRESS')]",
                 "//button[contains(text(), 'HOLD')]",
+                "//div[contains(text(), 'PRESS')]",
+                "//div[contains(text(), 'HOLD')]",
                 "//*[contains(@class, 'px-captcha')]//*[contains(text(), 'PRESS')]",
-                "//*[contains(@class, 'px-captcha')]//*[contains(text(), 'HOLD')]"
+                "//*[contains(@class, 'px-captcha')]//*[contains(text(), 'HOLD')]",
+                "//button[contains(@class, 'press')]",
+                "//button[contains(@class, 'hold')]",
+                "//div[contains(@class, 'press')]",
+                "//div[contains(@class, 'hold')]",
+                "//button[@type='button']",
+                "//button[@type='submit']",
+                "//input[@type='button']",
+                "//input[@type='submit']",
+                "//button",
+                "//div[@role='button']",
+                "//span[@role='button']",
+                
+                # Дополнительные селекторы для PerimeterX
+                "//*[contains(@class, 'px-captcha')]//button",
+                "//*[contains(@id, 'px-captcha')]//button",
+                "//*[contains(@class, 'captcha')]//button",
+                "//*[contains(@id, 'captcha')]//button",
+                "//*[contains(text(), 'PRESS') and contains(text(), 'HOLD')]",
+                "//*[contains(text(), 'press') and contains(text(), 'hold')]",
+                "//*[contains(text(), 'Press') and contains(text(), 'Hold')]"
             ]
             
             button = None
-            for selector in button_selectors:
+            found_selector = None
+            
+            # Сначала получаем HTML для анализа
+            page_content = await self.page.content()
+            logger.info(f"🔍 Анализируем HTML страницы (длина: {len(page_content)})...")
+            
+            # Ищем все кнопки на странице
+            all_buttons = await self.page.query_selector_all("button")
+            all_divs = await self.page.query_selector_all("div")
+            all_inputs = await self.page.query_selector_all("input")
+            
+            logger.info(f"📊 Найдено элементов: {len(all_buttons)} кнопок, {len(all_divs)} div, {len(all_inputs)} input")
+            
+            # Пробуем каждый селектор
+            for i, selector in enumerate(button_selectors):
                 try:
                     if selector.startswith("//"):
                         button = await self.page.query_selector(f"xpath={selector}")
@@ -442,13 +509,54 @@ class FiverrRegistrator:
                         button = await self.page.query_selector(selector)
                     
                     if button:
+                        # Проверяем, что кнопка видима
+                        is_visible = await button.is_visible()
+                        is_enabled = await button.is_enabled()
+                        button_text = await button.text_content()
+                        
                         logger.info(f"✅ Найдена кнопка PerimeterX: {selector}")
-                        break
-                except:
+                        logger.info(f"   Видима: {is_visible}, Включена: {is_enabled}, Текст: '{button_text}'")
+                        
+                        if is_visible and is_enabled:
+                            found_selector = selector
+                            break
+                        else:
+                            logger.warning(f"   Кнопка найдена, но не видима или не включена")
+                            button = None
+                except Exception as e:
+                    logger.debug(f"   Селектор {i+1}/{len(button_selectors)} не сработал: {selector}")
                     continue
             
             if not button:
                 logger.error("❌ Кнопка PerimeterX не найдена")
+                
+                # Дополнительная отладка - ищем любые элементы с текстом PRESS или HOLD
+                try:
+                    press_elements = await self.page.query_selector_all("//*[contains(text(), 'PRESS')]")
+                    hold_elements = await self.page.query_selector_all("//*[contains(text(), 'HOLD')]")
+                    
+                    logger.info(f"🔍 Найдено элементов с 'PRESS': {len(press_elements)}")
+                    logger.info(f"🔍 Найдено элементов с 'HOLD': {len(hold_elements)}")
+                    
+                    for i, elem in enumerate(press_elements[:3]):  # Показываем первые 3
+                        try:
+                            tag_name = await elem.evaluate("el => el.tagName")
+                            text_content = await elem.text_content()
+                            logger.info(f"   PRESS элемент {i+1}: {tag_name} - '{text_content}'")
+                        except:
+                            pass
+                    
+                    for i, elem in enumerate(hold_elements[:3]):  # Показываем первые 3
+                        try:
+                            tag_name = await elem.evaluate("el => el.tagName")
+                            text_content = await elem.text_content()
+                            logger.info(f"   HOLD элемент {i+1}: {tag_name} - '{text_content}'")
+                        except:
+                            pass
+                            
+                except Exception as e:
+                    logger.error(f"Ошибка при дополнительной отладке: {e}")
+                
                 return False
             
             # ЧЕЛОВЕЧЕСКОЕ ПОВЕДЕНИЕ - ЗАЖИМАЕМ И ДЕРЖИМ!
