@@ -62,6 +62,363 @@ class FiverrWorkingRegistrator:
         """Получить случайный User-Agent"""
         return random.choice(self.user_agents)
     
+    async def _bypass_press_hold_captcha(self, driver) -> bool:
+        """Обход капчи PRESS & HOLD"""
+        try:
+            logger.info("Пытаемся обойти капчу PRESS & HOLD...")
+            
+            # Ждем загрузки страницы
+            await asyncio.sleep(2)
+            
+            # Ищем кнопку PRESS & HOLD по разным селекторам
+            button_selectors = [
+                "button[class*='press']",
+                "button[class*='hold']", 
+                "button[class*='captcha']",
+                "div[class*='press']",
+                "div[class*='hold']",
+                "button:contains('PRESS')",
+                "button:contains('HOLD')",
+                "[data-testid*='captcha']",
+                "[id*='captcha']",
+                "button[style*='border']"
+            ]
+            
+            button = None
+            for selector in button_selectors:
+                try:
+                    if ":contains" in selector:
+                        # Используем XPath для текстового поиска
+                        xpath = f"//button[contains(text(), 'PRESS') or contains(text(), 'HOLD')]"
+                        button = driver.find_element(By.XPATH, xpath)
+                    else:
+                        button = driver.find_element(By.CSS_SELECTOR, selector)
+                    if button:
+                        logger.info(f"Найдена кнопка капчи по селектору: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not button:
+                logger.warning("Кнопка капчи не найдена")
+                return False
+            
+            # Получаем размеры кнопки
+            size = button.size
+            logger.info(f"Размеры кнопки: {size}")
+            
+            # Нажимаем и удерживаем кнопку
+            from selenium.webdriver.common.action_chains import ActionChains
+            
+            actions = ActionChains(driver)
+            
+            # Перемещаемся к кнопке
+            actions.move_to_element(button)
+            
+            # Нажимаем и удерживаем
+            actions.click_and_hold(button)
+            
+            # Удерживаем от 3 до 5 секунд (случайно)
+            hold_time = random.uniform(3, 5)
+            logger.info(f"Удерживаем кнопку {hold_time:.1f} секунд...")
+            
+            # Выполняем действие
+            actions.perform()
+            
+            # Ждем указанное время
+            await asyncio.sleep(hold_time)
+            
+            # Отпускаем кнопку
+            actions.release(button).perform()
+            
+            logger.info("Кнопка отпущена, ждем результат...")
+            
+            # Ждем результата (до 10 секунд)
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                
+                # Проверяем, исчезла ли капча
+                try:
+                    current_url = driver.current_url
+                    if "fiverr.com" in current_url and "px-captcha" not in current_url:
+                        logger.info("Капча успешно пройдена!")
+                        return True
+                except:
+                    pass
+                
+                # Проверяем, появились ли ошибки
+                try:
+                    page_source = driver.page_source
+                    if "error" in page_source.lower() or "blocked" in page_source.lower():
+                        logger.warning("Обнаружена ошибка на странице")
+                        return False
+                except:
+                    pass
+            
+            logger.warning("Время ожидания истекло, капча не пройдена")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обходе капчи: {e}")
+            return False
+
+    async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
+        """Регистрация с обходом капчи через браузер"""
+        if not SELENIUM_AVAILABLE:
+            return {
+                "success": False,
+                "error": "Selenium недоступен - обход капчи невозможен"
+            }
+        
+        driver = None
+        try:
+            logger.info("Запускаем браузер для обхода капчи...")
+            
+            # Настройки Chrome
+            options = Options()
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            # Случайный User-Agent
+            user_agent = self._get_random_user_agent()
+            options.add_argument(f'--user-agent={user_agent}')
+            
+            # Запускаем браузер
+            driver = webdriver.Chrome(options=options)
+            
+            # Убираем признаки автоматизации
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": user_agent})
+            
+            # Переходим на главную страницу (где происходит регистрация)
+            logger.info("Переходим на главную страницу Fiverr...")
+            driver.get("https://it.fiverr.com/")
+            
+            # Ждем загрузки
+            await asyncio.sleep(3)
+            
+            # Проверяем, есть ли капча
+            page_source = driver.page_source
+            if "PRESS" in page_source and "HOLD" in page_source:
+                logger.info("Обнаружена капча PRESS & HOLD, пытаемся обойти...")
+                
+                # Делаем скриншот капчи
+                if telegram_bot and chat_id:
+                    try:
+                        screenshot = driver.get_screenshot_as_png()
+                        from io import BytesIO
+                        screenshot_file = BytesIO(screenshot)
+                        screenshot_file.name = f"captcha_before_{email}.png"
+                        
+                        await telegram_bot.send_photo(
+                            chat_id=chat_id,
+                            photo=screenshot_file,
+                            caption=f"🚨 <b>Обнаружена капча PRESS & HOLD</b>\n\n"
+                                   f"📧 Email: <code>{email}</code>\n"
+                                   f"🌐 Страница: Главная страница Fiverr\n"
+                                   f"🤖 Пытаемся обойти автоматически...",
+                            parse_mode='HTML'
+                        )
+                    except Exception as e:
+                        logger.warning(f"Ошибка отправки скриншота: {e}")
+                
+                # Обходим капчу
+                captcha_bypassed = await self._bypass_press_hold_captcha(driver)
+                
+                if not captcha_bypassed:
+                    logger.warning("Не удалось обойти капчу")
+                    return {
+                        "success": False,
+                        "error": "Не удалось обойти капчу PRESS & HOLD"
+                    }
+                
+                logger.info("Капча успешно обойдена, продолжаем регистрацию...")
+            
+            # Теперь заполняем форму регистрации на главной странице
+            try:
+                # Ищем поля формы регистрации на главной странице
+                # Пробуем разные селекторы для полей регистрации
+                email_selectors = [
+                    "input[type='email']",
+                    "input[name*='email']", 
+                    "input[id*='email']",
+                    "input[placeholder*='email' i]",
+                    "input[placeholder*='Email' i]",
+                    "input[data-testid*='email']"
+                ]
+                
+                password_selectors = [
+                    "input[type='password']",
+                    "input[name*='password']",
+                    "input[id*='password']",
+                    "input[placeholder*='password' i]",
+                    "input[placeholder*='Password' i]",
+                    "input[data-testid*='password']"
+                ]
+                
+                username_selectors = [
+                    "input[name*='username']",
+                    "input[id*='username']",
+                    "input[placeholder*='username' i]",
+                    "input[placeholder*='Username' i]",
+                    "input[data-testid*='username']"
+                ]
+                
+                # Ищем поля по селекторам
+                email_field = None
+                for selector in email_selectors:
+                    try:
+                        email_field = driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Найдено поле email по селектору: {selector}")
+                        break
+                    except:
+                        continue
+                
+                password_field = None
+                for selector in password_selectors:
+                    try:
+                        password_field = driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Найдено поле password по селектору: {selector}")
+                        break
+                    except:
+                        continue
+                
+                username_field = None
+                for selector in username_selectors:
+                    try:
+                        username_field = driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Найдено поле username по селектору: {selector}")
+                        break
+                    except:
+                        continue
+                
+                if not email_field or not password_field:
+                    logger.error("Не найдены обязательные поля email или password")
+                    return {
+                        "success": False,
+                        "error": "Не найдены поля формы регистрации на главной странице"
+                    }
+                
+                # Заполняем поля
+                email_field.clear()
+                email_field.send_keys(email)
+                logger.info("Поле email заполнено")
+                
+                password_field.clear()
+                password_field.send_keys(password)
+                logger.info("Поле password заполнено")
+                
+                # Заполняем username если поле найдено
+                if username_field:
+                    username_field.clear()
+                    username_field.send_keys(username)
+                    logger.info("Поле username заполнено")
+                else:
+                    logger.info("Поле username не найдено - возможно необязательное")
+                
+                logger.info("Поля формы заполнены")
+                
+                # Ищем кнопку регистрации на главной странице
+                submit_selectors = [
+                    "button[type='submit']",
+                    "button[class*='submit']",
+                    "button[class*='register']",
+                    "button[class*='signup']",
+                    "button[class*='join']",
+                    "button[class*='create']",
+                    "input[type='submit']",
+                    "button:contains('Sign up')",
+                    "button:contains('Join')",
+                    "button:contains('Register')",
+                    "button:contains('Create')",
+                    "[data-testid*='submit']",
+                    "[data-testid*='register']",
+                    "[data-testid*='signup']"
+                ]
+                
+                submit_button = None
+                for selector in submit_selectors:
+                    try:
+                        if ":contains" in selector:
+                            # Используем XPath для текстового поиска
+                            text = selector.split("'")[1]
+                            xpath = f"//button[contains(text(), '{text}')]"
+                            submit_button = driver.find_element(By.XPATH, xpath)
+                        else:
+                            submit_button = driver.find_element(By.CSS_SELECTOR, selector)
+                        if submit_button:
+                            logger.info(f"Найдена кнопка регистрации по селектору: {selector}")
+                            break
+                    except:
+                        continue
+                
+                if not submit_button:
+                    logger.error("Кнопка регистрации не найдена")
+                    return {
+                        "success": False,
+                        "error": "Кнопка регистрации не найдена на главной странице"
+                    }
+                
+                # Нажимаем кнопку
+                submit_button.click()
+                logger.info("Кнопка регистрации нажата")
+                
+                # Ждем результата
+                await asyncio.sleep(5)
+                
+                # Проверяем успешность регистрации
+                current_url = driver.current_url
+                page_source = driver.page_source
+                
+                if "success" in page_source.lower() or "welcome" in page_source.lower() or "dashboard" in current_url:
+                    logger.info("Регистрация успешна!")
+                    
+                    # Получаем cookies
+                    cookies = {}
+                    for cookie in driver.get_cookies():
+                        cookies[cookie['name']] = cookie['value']
+                    
+                    return {
+                        "success": True,
+                        "email": email,
+                        "username": username,
+                        "password": password,
+                        "cookies": cookies,
+                        "method": "browser_with_captcha_bypass"
+                    }
+                else:
+                    logger.warning("Регистрация не удалась")
+                    return {
+                        "success": False,
+                        "error": "Регистрация не удалась после обхода капчи"
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Ошибка при заполнении формы: {e}")
+                return {
+                    "success": False,
+                    "error": f"Ошибка заполнения формы: {str(e)}"
+                }
+                
+        except Exception as e:
+            logger.error(f"Критическая ошибка при обходе капчи: {e}")
+            return {
+                "success": False,
+                "error": f"Ошибка обхода капчи: {str(e)}"
+            }
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                    logger.info("Браузер закрыт")
+                except:
+                    pass
+
     async def _take_captcha_screenshot(self, url: str = "https://it.fiverr.com/") -> Optional[bytes]:
         """Сделать скриншот страницы с капчей"""
         if not SELENIUM_AVAILABLE:
@@ -589,12 +946,27 @@ class FiverrWorkingRegistrator:
                         except Exception as e:
                             logger.error(f"Ошибка при отправке скриншота: {e}")
                     
-                    return {
-                        "success": False,
-                        "error": "❌ Обнаружена защита PerimeterX (капча). HTTP регистрация заблокирована. Попробуйте:\n• Использовать другой прокси\n• Повторить через несколько минут\n• Использовать VPN",
-                        "method": "http_blocked",
-                        "screenshot_sent": screenshot_data is not None
-                    }
+                    # Пытаемся обойти капчу через браузер
+                    logger.info("Пытаемся обойти капчу через браузер...")
+                    browser_result = await self._register_with_captcha_bypass(
+                        email=email,
+                        username=username,
+                        password=password,
+                        telegram_bot=telegram_bot,
+                        chat_id=chat_id
+                    )
+                    
+                    if browser_result.get("success"):
+                        logger.info("Регистрация успешна через браузер с обходом капчи!")
+                        return browser_result
+                    else:
+                        logger.warning("Не удалось зарегистрироваться через браузер")
+                        return {
+                            "success": False,
+                            "error": f"❌ Обнаружена защита PerimeterX (капча). HTTP регистрация заблокирована. Обход капчи не удался: {browser_result.get('error', 'Неизвестная ошибка')}",
+                            "method": "http_blocked_captcha_bypass_failed",
+                            "screenshot_sent": screenshot_data is not None
+                        }
                 else:
                     logger.error(f"Ошибка регистрации: {response.status}")
                     return {
