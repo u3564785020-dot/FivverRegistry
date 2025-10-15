@@ -459,14 +459,17 @@ async def run_registration_task_simple(
             if proxies and len(proxies) > 0:
                 proxy_config = proxies[0]
             
-            results = await register_accounts_batch(
+            # Создаем регистратор
+            registrator = FiverrRegistrator(proxy=proxy_config, use_proxy=use_proxy)
+            
+            # Запускаем регистрацию через метод класса
+            results = await registrator.register_accounts_batch(
                 email_service=email_service,
                 count=account_count,
                 proxy=proxy_config,
-                use_proxy=use_proxy,
+                selected_domain=selected_domain,
                 telegram_bot=update.effective_chat.get_bot(),
-                chat_id=update.effective_chat.id,
-                selected_domain=selected_domain
+                chat_id=update.effective_chat.id
             )
             
             successful = 0
