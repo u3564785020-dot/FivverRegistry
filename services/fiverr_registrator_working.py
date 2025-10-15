@@ -118,8 +118,8 @@ class FiverrWorkingRegistrator:
             # Нажимаем и удерживаем
             actions.click_and_hold(button)
             
-            # Удерживаем от 3 до 5 секунд (случайно)
-            hold_time = random.uniform(3, 5)
+            # Удерживаем от 7 до 9 секунд (как требует капча)
+            hold_time = random.uniform(7, 9)
             logger.info(f"Удерживаем кнопку {hold_time:.1f} секунд...")
             
             # Выполняем действие
@@ -174,14 +174,22 @@ class FiverrWorkingRegistrator:
         try:
             logger.info("Запускаем браузер для обхода капчи...")
             
-            # Убиваем все процессы Chrome перед запуском
+            # Агрессивно убиваем все процессы Chrome перед запуском
             import subprocess
             try:
-                subprocess.run(["pkill", "-f", "chrome"], check=False, capture_output=True)
-                subprocess.run(["pkill", "-f", "chromedriver"], check=False, capture_output=True)
-                await asyncio.sleep(1)
-            except:
-                pass
+                # Убиваем все процессы Chrome
+                subprocess.run(["pkill", "-9", "-f", "chrome"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-9", "-f", "chromedriver"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-9", "-f", "chromium"], check=False, capture_output=True)
+                
+                # Очищаем временные файлы Chrome
+                subprocess.run(["rm", "-rf", "/tmp/.com.google.Chrome*"], check=False, capture_output=True)
+                subprocess.run(["rm", "-rf", "/tmp/chrome*"], check=False, capture_output=True)
+                
+                await asyncio.sleep(2)
+                logger.info("Все процессы Chrome принудительно завершены")
+            except Exception as e:
+                logger.warning(f"Ошибка при очистке процессов: {e}")
             
             # Настройки Chrome
             options = Options()
@@ -193,14 +201,13 @@ class FiverrWorkingRegistrator:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Уникальный user-data-dir для каждого браузера
-            import uuid
-            unique_id = uuid.uuid4().hex[:8]
-            user_data_dir = f"/tmp/chrome_user_data_{unique_id}"
-            options.add_argument(f'--user-data-dir={user_data_dir}')
+            # Используем только incognito без user-data-dir
             options.add_argument('--incognito')
             options.add_argument('--no-first-run')
             options.add_argument('--disable-default-apps')
+            options.add_argument('--no-user-data-dir')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-plugins')
             
             # Случайный User-Agent
             user_agent = self._get_random_user_agent()
@@ -437,14 +444,7 @@ class FiverrWorkingRegistrator:
                 except:
                     pass
             
-            # Очищаем временные файлы
-            try:
-                import shutil
-                if 'user_data_dir' in locals():
-                    shutil.rmtree(user_data_dir, ignore_errors=True)
-                    logger.info(f"Временные файлы очищены: {user_data_dir}")
-            except:
-                pass
+            # Временные файлы больше не используются
 
     async def _take_captcha_screenshot(self, url: str = "https://it.fiverr.com/") -> Optional[bytes]:
         """Сделать скриншот страницы с капчей"""
@@ -476,14 +476,13 @@ class FiverrWorkingRegistrator:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Уникальный user-data-dir для каждого браузера
-            import uuid
-            unique_id = uuid.uuid4().hex[:8]
-            user_data_dir = f"/tmp/chrome_screenshot_{unique_id}"
-            options.add_argument(f'--user-data-dir={user_data_dir}')
+            # Используем только incognito без user-data-dir
             options.add_argument('--incognito')
             options.add_argument('--no-first-run')
             options.add_argument('--disable-default-apps')
+            options.add_argument('--no-user-data-dir')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-plugins')
             
             # Добавляем прокси если есть (только для HTTP запросов, не для Selenium)
             # Chrome не поддерживает прокси с аутентификацией через --proxy-server
@@ -525,14 +524,7 @@ class FiverrWorkingRegistrator:
                 except:
                     pass
             
-            # Очищаем временные файлы
-            try:
-                import shutil
-                if 'user_data_dir' in locals():
-                    shutil.rmtree(user_data_dir, ignore_errors=True)
-                    logger.info(f"Временные файлы скриншота очищены: {user_data_dir}")
-            except:
-                pass
+            # Временные файлы больше не используются
         
     async def __aenter__(self):
         """Асинхронный контекстный менеджер - вход"""
