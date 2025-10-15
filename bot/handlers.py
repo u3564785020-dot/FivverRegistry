@@ -307,10 +307,15 @@ async def run_registration_task(
     try:
         async with EmailAPIService() as email_service:
             # Запускаем регистрацию
+            # Берем первый прокси из списка
+            proxy_config = None
+            if proxies and len(proxies) > 0:
+                proxy_config = ProxyConfig.from_string(proxies[0])
+            
             results = await register_accounts_batch(
                 email_service=email_service,
-                proxies=proxies,
-                accounts_per_proxy=1
+                count=account_count,
+                proxy=proxy_config
             )
             
             # Обрабатываем результаты
