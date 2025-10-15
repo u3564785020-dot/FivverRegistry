@@ -92,6 +92,33 @@ class EmailAPIService:
             logger.error(f"Ошибка получения списка почт: {data.get('value')}")
             return None
     
+    async def get_available_domains(self, site: str = FIVERR_SITE) -> Optional[Dict[str, Any]]:
+        """
+        Получение списка доступных доменов для сайта (упрощенная версия)
+        
+        Args:
+            site: Название сайта (по умолчанию fiverr.com)
+            
+        Returns:
+            Словарь с результатом и списком доменов
+        """
+        data = await self._make_request("/email/quantity", {"site": site})
+        
+        if data.get("status") == "success":
+            domains_data = data.get("data", {})
+            domains_list = list(domains_data.keys())
+            logger.info(f"Доступные домены для {site}: {domains_list}")
+            return {
+                "status": "success",
+                "data": domains_list
+            }
+        else:
+            logger.error(f"Ошибка получения доменов: {data.get('value')}")
+            return {
+                "status": "error",
+                "value": data.get('value', 'Unknown error')
+            }
+    
     async def order_email(
         self, 
         site: str = FIVERR_SITE,

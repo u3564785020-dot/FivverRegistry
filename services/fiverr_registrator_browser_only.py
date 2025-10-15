@@ -554,8 +554,19 @@ async def register_accounts_batch(
             try:
                 logger.info(f"Регистрация аккаунта {i+1}/{count}")
                 
-                # Используем переданный домен или gmx.com по умолчанию
-                logger.info(f"Используем домен: {selected_domain}")
+                # Получаем доступные домены и выбираем первый доступный
+                domains_result = await email_service.get_available_domains()
+                if domains_result and domains_result.get("status") == "success":
+                    available_domains = domains_result.get("data", [])
+                    if available_domains:
+                        selected_domain = available_domains[0]
+                        logger.info(f"Используем выбранный домен: {selected_domain}")
+                    else:
+                        logger.warning("Нет доступных доменов, используем gmx.com")
+                        selected_domain = "gmx.com"
+                else:
+                    logger.warning("Не удалось получить домены, используем gmx.com")
+                    selected_domain = "gmx.com"
                 
                 # Заказываем email
                 email_result = await email_service.order_email(selected_domain)
