@@ -369,11 +369,22 @@ async def register_accounts_batch(
                 
                 # Заказываем email
                 email_result = await email_service.order_email("fiverr.com")
-                if not email_result["success"]:
-                    logger.error(f"Не удалось заказать email: {email_result['error']}")
+                logger.info(f"Результат заказа email: {type(email_result)} - {email_result}")
+                
+                if not isinstance(email_result, dict) or not email_result.get("success"):
+                    error_msg = email_result.get('error', 'Неизвестная ошибка') if isinstance(email_result, dict) else str(email_result)
+                    logger.error(f"Не удалось заказать email: {error_msg}")
                     results.append({
                         "success": False,
-                        "error": f"Ошибка заказа email: {email_result['error']}"
+                        "error": f"Ошибка заказа email: {error_msg}"
+                    })
+                    continue
+                
+                if "email" not in email_result:
+                    logger.error(f"Email не найден в результате: {email_result}")
+                    results.append({
+                        "success": False,
+                        "error": "Email не найден в результате заказа"
                     })
                     continue
                 
