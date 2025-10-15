@@ -182,15 +182,48 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    text = """
-🚀 <b>Начинаем регистрацию аккаунтов</b>
+    # Проверяем, включены ли прокси
+    use_proxy = context.user_data.get('use_proxy', True)
+    
+    if use_proxy:
+        text = """
+📝 <b>Регистрация аккаунтов Fiverr</b>
 
-<b>Шаг 1:</b> Укажите количество аккаунтов для регистрации
-Введите число от 1 до 50
+<b>Шаг 1:</b> Выберите домен для покупки почты
+
+<b>Доступные домены:</b>
+• gmx.com (рекомендуется)
+• mail.com
+• email.com
+• yandex.ru
+• rambler.ru
+
+<b>Формат:</b> Просто название домена
+<b>Пример:</b> gmx.com
+
+<b>Прокси:</b> ✅ Включены
+"""
+    else:
+        text = """
+📝 <b>Регистрация аккаунтов Fiverr</b>
+
+<b>Шаг 1:</b> Выберите домен для покупки почты
+
+<b>Доступные домены:</b>
+• gmx.com (рекомендуется)
+• mail.com
+• email.com
+• yandex.ru
+• rambler.ru
+
+<b>Формат:</b> Просто название домена
+<b>Пример:</b> gmx.com
+
+<b>Прокси:</b> ❌ Отключены - прямое подключение
 """
     
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
-    context.user_data['state'] = 'waiting_count'
+    context.user_data['state'] = 'waiting_domain'
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -199,7 +232,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     state = context.user_data.get('state')
     
-    if state == 'waiting_count':
+    if state == 'waiting_domain':
+        # Проверяем, что домен валидный
+        domain = text.strip().lower()
+        valid_domains = ['gmx.com', 'mail.com', 'email.com', 'yandex.ru', 'rambler.ru', 'mail.ru', 'gmail.com', 'outlook.com', 'hotmail.com']
+        
+        if domain in valid_domains:
+            context.user_data['selected_domain'] = domain
+            context.user_data['state'] = 'waiting_count'
+            await update.message.reply_text(
+                f"""
+✅ Выбран домен: <b>{domain}</b>
+
+<b>Шаг 2:</b> Введите количество аккаунтов для регистрации (1-50)
+
+<b>Формат:</b> Просто число
+<b>Пример:</b> 5
+""",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                f"""
+❌ Неверный домен: <b>{domain}</b>
+
+<b>Доступные домены:</b>
+• gmx.com (рекомендуется)
+• mail.com
+• email.com
+• yandex.ru
+• rambler.ru
+
+<b>Формат:</b> Просто название домена
+<b>Пример:</b> gmx.com
+""",
+                parse_mode=ParseMode.HTML
+            )
+    
+    elif state == 'waiting_count':
         try:
             count = int(text)
             if 1 <= count <= 50:
@@ -241,6 +311,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     # Запускаем регистрацию без прокси
                     task_id = str(uuid.uuid4())
+                    selected_domain = context.user_data.get('selected_domain', 'gmx.com')
                     await db.create_task(
                         user_id=update.effective_user.id,
                         task_id=task_id,
@@ -251,7 +322,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Запускаем задачу в фоне
                     # Передаем только необходимые данные, а не весь context
                     asyncio.create_task(
-                        run_registration_task_simple(update, task_id, count, [], use_proxy=False)
+                        run_registration_task_simple(update, task_id, count, [], use_proxy=False, selected_domain=selected_domain)
                     )
             else:
                 await update.message.reply_text(
@@ -353,7 +424,7 @@ ID задачи: <code>{task_id}</code>
     use_proxy = context.user_data.get('use_proxy', True)
     
     asyncio.create_task(
-        run_registration_task_simple(update, task_id, account_count, proxies, use_proxy)
+        run_registration_task_simple(update, task_id, account_count, proxies, use_proxy, 'gmx.com')
     )
 
 
@@ -362,7 +433,8 @@ async def run_registration_task_simple(
     task_id: str,
     account_count: int,
     proxies: list,
-    use_proxy: bool = True
+    use_proxy: bool = True,
+    selected_domain: str = 'gmx.com'
 ):
     """Упрощенная версия run_registration_task без context"""
     user_id = update.effective_user.id
@@ -380,7 +452,8 @@ async def run_registration_task_simple(
                 proxy=proxy_config,
                 use_proxy=use_proxy,
                 telegram_bot=update.effective_chat.get_bot(),
-                chat_id=update.effective_chat.id
+                chat_id=update.effective_chat.id,
+                selected_domain=selected_domain
             )
             
             successful = 0

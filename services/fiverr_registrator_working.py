@@ -83,10 +83,9 @@ class FiverrWorkingRegistrator:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Добавляем прокси если есть
-            if self.proxy and self.use_proxy:
-                proxy_url = f"http://{self.proxy.username}:{self.proxy.password}@{self.proxy.host}:{self.proxy.port}"
-                options.add_argument(f'--proxy-server={proxy_url}')
+            # Добавляем прокси если есть (только для HTTP запросов, не для Selenium)
+            # Chrome не поддерживает прокси с аутентификацией через --proxy-server
+            # Прокси будет использоваться только в HTTP запросах
             
             # Случайный User-Agent
             user_agent = self._get_random_user_agent()
@@ -615,7 +614,8 @@ async def register_accounts_batch(
     proxy: Optional[ProxyConfig] = None,
     use_proxy: bool = True,
     telegram_bot = None,
-    chat_id: int = None
+    chat_id: int = None,
+    selected_domain: str = 'gmx.com'
 ) -> list:
     """Пакетная регистрация аккаунтов"""
     results = []
@@ -626,31 +626,8 @@ async def register_accounts_batch(
                 logger.info(f"Регистрация аккаунта {i+1}/{count}")
                 
                 # Получаем доступные домены и выбираем первый доступный
-                available_domains = await email_service.get_available_emails("fiverr.com")
-                if not available_domains:
-                    logger.error("Нет доступных доменов для fiverr.com")
-                    results.append({
-                        "success": False,
-                        "error": "Нет доступных доменов для fiverr.com"
-                    })
-                    continue
-                
-                # Выбираем первый доступный домен с количеством > 0
-                selected_domain = None
-                for domain, info in available_domains.items():
-                    if info.get("count", 0) > 0:
-                        selected_domain = domain
-                        break
-                
-                if not selected_domain:
-                    logger.error("Нет доступных доменов с почтами")
-                    results.append({
-                        "success": False,
-                        "error": "Нет доступных доменов с почтами"
-                    })
-                    continue
-                
-                logger.info(f"Выбран домен: {selected_domain}")
+                # Используем выбранный пользователем домен
+                logger.info(f"Используем выбранный домен: {selected_domain}")
                 
                 # Заказываем email
                 email_result = await email_service.order_email("fiverr.com", selected_domain)
