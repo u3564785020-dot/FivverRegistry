@@ -244,7 +244,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await db.create_task(
                         user_id=update.effective_user.id,
                         task_id=task_id,
-                        account_count=count,
+                        total_accounts=count,
                         proxies=[]
                     )
                     
