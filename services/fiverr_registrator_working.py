@@ -358,13 +358,13 @@ class FiverrWorkingRegistrator:
                             "confirmation_code": confirmation_code,
                             "response": response_text
                         }
-                        elif response.status == 403 and "px-captcha" in response_text:
-                            logger.warning("Обнаружена капча PerimeterX - HTTP регистрация заблокирована")
-                            return {
-                                "success": False,
-                                "error": "❌ Обнаружена защита PerimeterX (капча). HTTP регистрация заблокирована. Попробуйте:\n• Использовать другой прокси\n• Повторить через несколько минут\n• Использовать VPN",
-                                "method": "http_blocked"
-                            }
+                elif response.status == 403 and "px-captcha" in response_text:
+                    logger.warning("Обнаружена капча PerimeterX - HTTP регистрация заблокирована")
+                    return {
+                        "success": False,
+                        "error": "❌ Обнаружена защита PerimeterX (капча). HTTP регистрация заблокирована. Попробуйте:\n• Использовать другой прокси\n• Повторить через несколько минут\n• Использовать VPN",
+                        "method": "http_blocked"
+                    }
                 else:
                     logger.error(f"Ошибка регистрации: {response.status}")
                     return {
