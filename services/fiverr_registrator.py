@@ -160,46 +160,55 @@ class FiverrRegistrator:
     
     async def _init_browser(self):
         """Инициализация браузера с настройками"""
-        playwright = await async_playwright().start()
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.action_chains import ActionChains
+        import time
+        import random
         
-        # Настройки запуска браузера
-        launch_options = {
-            "headless": BROWSER_HEADLESS,
-            "args": [
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-web-security"
-            ]
-        }
+        # Создаем Selenium браузер вместо Playwright
+        options = Options()
+        
+        # ОТКЛЮЧАЕМ ВСЕ СЛЕДЫ АВТОМАТИЗАЦИИ
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        # ОБЫЧНЫЕ НАСТРОЙКИ
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        
+        # USER AGENT
+        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         
         # Добавляем прокси если указан
         if self.proxy:
-            launch_options["proxy"] = self.proxy.to_playwright_format()
+            options.add_argument(f"--proxy-server={self.proxy.to_url()}")
             logger.info(f"Используется прокси: {self.proxy}")
         
-        self.browser = await playwright.chromium.launch(**launch_options)
+        self.driver = webdriver.Chrome(options=options)
         
-        # Создаем контекст с user agent
-        context_options = {
-            "user_agent": self.ua.random,
-            "viewport": {"width": 1920, "height": 1080},
-            "locale": "en-US",
-            "timezone_id": "America/New_York"
-        }
+        # УБИРАЕМ webdriver
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
-        self.context = await self.browser.new_context(**context_options)
+        # УБИРАЕМ chrome.runtime
+        self.driver.execute_script("delete window.chrome.runtime")
         
-        # Добавляем стелс-скрипт для обхода детекции
-        await self.context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
+        # ПОДДЕЛЫВАЕМ plugins
+        self.driver.execute_script("""
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
+                    {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
+                    {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''}
+                ]
             });
         """)
-        
-        self.page = await self.context.new_page()
-        self.page.set_default_timeout(BROWSER_TIMEOUT)
         
         logger.info("Браузер инициализирован")
     
