@@ -320,8 +320,8 @@ class FiverrWorkingRegistrator:
                         if email_id and email_service:
                             logger.info("Получаем код подтверждения...")
                             confirmation_result = await email_service.get_message(email_id)
-                            if confirmation_result["success"]:
-                                confirmation_code = confirmation_result.get("code")
+                            if confirmation_result and confirmation_result.get("value"):
+                                confirmation_code = confirmation_result.get("value")
                                 logger.info(f"Код подтверждения получен: {confirmation_code}")
                         
                         return {
@@ -333,6 +333,9 @@ class FiverrWorkingRegistrator:
                             "confirmation_code": confirmation_code,
                             "response": response_text
                         }
+                elif response.status == 403 and "px-captcha" in response_text:
+                    logger.info("Обнаружена капча PerimeterX, переключаемся на браузерную автоматизацию...")
+                    return await self._handle_captcha_with_browser(email, username, password, email_service, email_id)
                 else:
                     logger.error(f"Ошибка регистрации: {response.status}")
                     return {
@@ -344,6 +347,151 @@ class FiverrWorkingRegistrator:
         except Exception as e:
             logger.error(f"Критическая ошибка при регистрации: {e}")
             return {"success": False, "error": str(e)}
+    
+    async def _handle_captcha_with_browser(self, email: str, username: str, password: str, email_service: EmailAPIService, email_id: str = None) -> Dict[str, Any]:
+        """Обработка капчи через браузерную автоматизацию"""
+        try:
+            logger.info("Запускаем браузер для обхода капчи...")
+            
+            # Импортируем selenium только когда нужен
+            from selenium import webdriver
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.chrome.options import Options
+            import time
+            
+            # Настройки браузера для обхода детекции
+            options = Options()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+            
+            # Настройка прокси если есть
+            if self.proxy:
+                proxy_url = f"http://{self.proxy.username}:{self.proxy.password}@{self.proxy.host}:{self.proxy.port}"
+                options.add_argument(f"--proxy-server={proxy_url}")
+            
+            driver = webdriver.Chrome(options=options)
+            
+            try:
+                # Убираем признаки автоматизации
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                # Переходим на страницу регистрации
+                driver.get("https://it.fiverr.com/")
+                time.sleep(3)
+                
+                # Ищем и кликаем на кнопку регистрации
+                try:
+                    register_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='register'], button[data-track-tag*='register']"))
+                    )
+                    register_button.click()
+                    time.sleep(2)
+                except:
+                    logger.warning("Не удалось найти кнопку регистрации, пробуем прямой переход")
+                    driver.get("https://it.fiverr.com/register")
+                    time.sleep(3)
+                
+                # Заполняем форму регистрации
+                email_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name*='email'], input[id*='email']"))
+                )
+                email_field.clear()
+                email_field.send_keys(email)
+                time.sleep(1)
+                
+                # Ищем поле username
+                try:
+                    username_field = driver.find_element(By.CSS_SELECTOR, "input[name*='username'], input[id*='username']")
+                    username_field.clear()
+                    username_field.send_keys(username)
+                    time.sleep(1)
+                except:
+                    logger.warning("Поле username не найдено")
+                
+                # Ищем поле password
+                password_field = driver.find_element(By.CSS_SELECTOR, "input[type='password'], input[name*='password'], input[id*='password']")
+                password_field.clear()
+                password_field.send_keys(password)
+                time.sleep(1)
+                
+                # Ищем и кликаем кнопку регистрации
+                submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit'], input[type='submit'], button[data-track-tag*='submit']")
+                submit_button.click()
+                time.sleep(5)
+                
+                # Проверяем, появилась ли капча
+                if "px-captcha" in driver.page_source or "captcha" in driver.page_source.lower():
+                    logger.info("Обнаружена капча, ждем решения...")
+                    
+                    # Ждем решения капчи (максимум 60 секунд)
+                    for i in range(60):
+                        if "px-captcha" not in driver.page_source and "captcha" not in driver.page_source.lower():
+                            logger.info("Капча решена!")
+                            break
+                        time.sleep(1)
+                    
+                    # Проверяем успешность регистрации
+                    if "success" in driver.page_source.lower() or "welcome" in driver.page_source.lower():
+                        logger.info("Регистрация успешна через браузер!")
+                        
+                        # Получаем cookies
+                        browser_cookies = {}
+                        for cookie in driver.get_cookies():
+                            browser_cookies[cookie['name']] = cookie['value']
+                        
+                        # Получаем код подтверждения если нужен
+                        confirmation_code = None
+                        if email_id and email_service:
+                            logger.info("Получаем код подтверждения...")
+                            confirmation_result = await email_service.get_message(email_id)
+                            if confirmation_result and confirmation_result.get("value"):
+                                confirmation_code = confirmation_result.get("value")
+                                logger.info(f"Код подтверждения получен: {confirmation_code}")
+                        
+                        return {
+                            "success": True,
+                            "email": email,
+                            "username": username,
+                            "password": password,
+                            "cookies": browser_cookies,
+                            "confirmation_code": confirmation_code,
+                            "method": "browser_captcha"
+                        }
+                    else:
+                        logger.error("Регистрация не удалась через браузер")
+                        return {
+                            "success": False,
+                            "error": "Не удалось зарегистрироваться через браузер",
+                            "method": "browser_captcha"
+                        }
+                else:
+                    logger.info("Капча не обнаружена, регистрация прошла успешно")
+                    return {
+                        "success": True,
+                        "email": email,
+                        "username": username,
+                        "password": password,
+                        "cookies": {cookie['name']: cookie['value'] for cookie in driver.get_cookies()},
+                        "confirmation_code": None,
+                        "method": "browser_direct"
+                    }
+                    
+            finally:
+                driver.quit()
+                
+        except Exception as e:
+            logger.error(f"Ошибка при обработке капчи через браузер: {e}")
+            return {
+                "success": False,
+                "error": f"Ошибка браузера: {str(e)}",
+                "method": "browser_captcha"
+            }
 
 async def register_accounts_batch(
     email_service: EmailAPIService,
