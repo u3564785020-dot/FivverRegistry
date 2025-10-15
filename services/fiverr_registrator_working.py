@@ -394,6 +394,8 @@ async def register_accounts_batch(
                 
             except Exception as e:
                 logger.error(f"❌ Критическая ошибка при регистрации аккаунта {i+1}: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 results.append({
                     "success": False,
                     "error": str(e)
