@@ -14,6 +14,7 @@ from services.database import db
 from bot.handlers import (
     start_command,
     help_command,
+    proxy_toggle_command,
     balance_command,
     register_command,
     tasks_command,
@@ -63,6 +64,7 @@ def main():
     # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("proxy_toggle", proxy_toggle_command))
     application.add_handler(CommandHandler("balance", balance_command))
     application.add_handler(CommandHandler("register", register_command))
     application.add_handler(CommandHandler("tasks", tasks_command))

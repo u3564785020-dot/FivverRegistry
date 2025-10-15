@@ -16,16 +16,40 @@ from services.email_api import EmailAPIService
 from services.proxy_manager import ProxyConfig
 
 class FiverrWorkingRegistrator:
-    def __init__(self, proxy: Optional[ProxyConfig] = None):
+    def __init__(self, proxy: Optional[ProxyConfig] = None, use_proxy: bool = True):
         self.proxy = proxy
+        self.use_proxy = use_proxy
         self.session = None
         self.csrf_token = None
         self.cookies = {}
         
+        # Список реалистичных User-Agent
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0"
+        ]
+    
+    def _get_random_user_agent(self) -> str:
+        """Получить случайный User-Agent"""
+        return random.choice(self.user_agents)
+        
     async def __aenter__(self):
         """Асинхронный контекстный менеджер - вход"""
         connector = None
-        if self.proxy:
+        if self.proxy and self.use_proxy:
             connector = aiohttp.TCPConnector()
         
         self.session = aiohttp.ClientSession(
@@ -45,7 +69,7 @@ class FiverrWorkingRegistrator:
             # Сначала получаем главную страницу
             url = "https://it.fiverr.com/"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'User-Agent': self._get_random_user_agent(),
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
                 'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -108,7 +132,7 @@ class FiverrWorkingRegistrator:
             ]
             
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'User-Agent': self._get_random_user_agent(),
                 'Accept': 'application/json, text/plain, */*',
                 'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
                 'X-Requested-With': 'XMLHttpRequest',
@@ -178,7 +202,7 @@ class FiverrWorkingRegistrator:
         try:
             url = "https://it.fiverr.com/api/v1/users/send_confirmation"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'User-Agent': self._get_random_user_agent(),
                 'Accept': 'application/json, text/plain, */*',
                 'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
                 'X-Requested-With': 'XMLHttpRequest',
@@ -240,7 +264,7 @@ class FiverrWorkingRegistrator:
             
             # Подготавливаем заголовки (улучшенные для обхода PerimeterX)
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'User-Agent': self._get_random_user_agent(),
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
                 'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
                 'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -277,7 +301,8 @@ class FiverrWorkingRegistrator:
             await asyncio.sleep(random.uniform(1, 3))
             
             # Выполняем запрос регистрации
-            async with self.session.post(url, data=form_data, headers=headers) as response:
+            proxy_url = self.proxy.to_url() if (self.proxy and self.use_proxy) else None
+            async with self.session.post(url, data=form_data, headers=headers, proxy=proxy_url) as response:
                 response_text = await response.text()
                 logger.info(f"Ответ сервера: {response.status}")
                 logger.info(f"Тело ответа: {response_text[:200]}...")
@@ -388,10 +413,13 @@ class FiverrWorkingRegistrator:
             options.add_argument("--silent")
             options.add_argument("--log-level=3")
             
-            # Настройка прокси если есть
-            if self.proxy:
+            # Настройка прокси если есть и включен
+            if self.proxy and self.use_proxy:
                 proxy_url = f"http://{self.proxy.username}:{self.proxy.password}@{self.proxy.host}:{self.proxy.port}"
                 options.add_argument(f"--proxy-server={proxy_url}")
+                logger.info(f"Используем прокси: {self.proxy.host}:{self.proxy.port}")
+            else:
+                logger.info("Прокси отключен, используем прямое подключение")
             
             # Агрессивная очистка процессов Chrome перед запуском
             import subprocess
@@ -552,12 +580,13 @@ class FiverrWorkingRegistrator:
 async def register_accounts_batch(
     email_service: EmailAPIService,
     count: int,
-    proxy: Optional[ProxyConfig] = None
+    proxy: Optional[ProxyConfig] = None,
+    use_proxy: bool = True
 ) -> list:
     """Пакетная регистрация аккаунтов"""
     results = []
     
-    async with FiverrWorkingRegistrator(proxy) as registrator:
+    async with FiverrWorkingRegistrator(proxy, use_proxy) as registrator:
         for i in range(count):
             try:
                 logger.info(f"Регистрация аккаунта {i+1}/{count}")
