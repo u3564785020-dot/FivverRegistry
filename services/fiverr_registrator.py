@@ -189,6 +189,226 @@ class FiverrRegistrator:
             logger.error(f"Ошибка при обходе капчи: {e}")
             return False
     
+    async def _advanced_captcha_bypass(self, driver, captcha_type: str) -> bool:
+        """ПРОДВИНУТЫЙ обход капчи с использованием ЛУЧШИХ ТЕХНОЛОГИЙ"""
+        try:
+            logger.info(f"🚀 Запускаем продвинутый обход капчи типа: {captcha_type}")
+            
+            if captcha_type == "PRESS_HOLD":
+                return await self._bypass_press_hold_advanced(driver)
+            elif captcha_type == "PERIMETERX":
+                return await self._bypass_perimeterx_advanced(driver)
+            elif captcha_type == "GENERIC":
+                return await self._bypass_generic_advanced(driver)
+            else:
+                logger.warning(f"Неизвестный тип капчи: {captcha_type}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Ошибка в продвинутом обходе капчи: {e}")
+            return False
+    
+    async def _bypass_press_hold_advanced(self, driver) -> bool:
+        """ПРОДВИНУТЫЙ обход капчи PRESS & HOLD с человеческим поведением"""
+        try:
+            # Ищем кнопку с МНОЖЕСТВЕННЫМИ селекторами
+            button_selectors = [
+                "button[class*='press']",
+                "button[class*='hold']", 
+                "button:contains('PRESS')",
+                "button:contains('HOLD')",
+                "div[class*='press']",
+                "div[class*='hold']",
+                "//button[contains(text(), 'PRESS')]",
+                "//button[contains(text(), 'HOLD')]",
+                "//div[contains(text(), 'PRESS')]",
+                "//div[contains(text(), 'HOLD')]",
+                "//*[contains(@class, 'press')]",
+                "//*[contains(@class, 'hold')]",
+                "//*[contains(text(), 'PRESS') and contains(text(), 'HOLD')]"
+            ]
+            
+            button = None
+            for selector in button_selectors:
+                try:
+                    if selector.startswith("//"):
+                        button = driver.find_element(By.XPATH, selector)
+                    else:
+                        button = driver.find_element(By.CSS_SELECTOR, selector)
+                    if button:
+                        logger.info(f"✅ Кнопка найдена с селектором: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not button:
+                logger.error("❌ Кнопка PRESS & HOLD не найдена")
+                return False
+            
+            # ЧЕЛОВЕЧЕСКОЕ ПОВЕДЕНИЕ - имитируем реального пользователя
+            logger.info("🤖 Имитируем человеческое поведение...")
+            
+            # 1. Сначала наводим курсор на кнопку (как человек)
+            actions = ActionChains(driver)
+            actions.move_to_element(button).perform()
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            
+            # 2. Небольшая пауза перед нажатием (как человек думает)
+            await asyncio.sleep(random.uniform(0.2, 0.5))
+            
+            # 3. Нажимаем и удерживаем с ЧЕЛОВЕЧЕСКИМИ вариациями
+            hold_time = random.uniform(7.5, 9.5)  # 7.5-9.5 секунд
+            logger.info(f"⏱️ Удерживаем кнопку {hold_time:.1f} секунд (человеческое время)...")
+            
+            # 4. Плавное нажатие и удержание
+            actions.click_and_hold(button).perform()
+            
+            # 5. Во время удержания добавляем небольшие движения (как человек)
+            for i in range(int(hold_time * 2)):  # Движения каждые 0.5 сек
+                await asyncio.sleep(0.5)
+                # Небольшое движение мыши для имитации человеческого поведения
+                try:
+                    actions.move_by_offset(random.randint(-2, 2), random.randint(-2, 2)).perform()
+                except:
+                    pass  # Игнорируем ошибки движения
+            
+            # 6. Отпускаем кнопку
+            actions.release(button).perform()
+            logger.info("✅ Кнопка отпущена")
+            
+            # 7. Ждем обработки (как человек)
+            await asyncio.sleep(random.uniform(2, 4))
+            
+            # 8. Проверяем результат
+            page_source = driver.page_source
+            if "PRESS" not in page_source or "HOLD" not in page_source:
+                logger.info("🎉 Капча PRESS & HOLD успешно обойдена!")
+                return True
+            else:
+                logger.warning("⚠️ Капча все еще присутствует, пробуем еще раз...")
+                # Пробуем еще раз с другим подходом
+                return await self._retry_captcha_bypass(driver)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка в продвинутом обходе PRESS & HOLD: {e}")
+            return False
+    
+    async def _bypass_perimeterx_advanced(self, driver) -> bool:
+        """ПРОДВИНУТЫЙ обход PerimeterX капчи"""
+        try:
+            logger.info("🛡️ Обходим PerimeterX капчу...")
+            
+            # Ждем загрузки PerimeterX
+            await asyncio.sleep(3)
+            
+            # Ищем элементы PerimeterX
+            px_selectors = [
+                "div[class*='px-captcha']",
+                "div[id*='px-captcha']",
+                "iframe[src*='px-captcha']",
+                "//div[contains(@class, 'px-captcha')]",
+                "//iframe[contains(@src, 'px-captcha')]"
+            ]
+            
+            for selector in px_selectors:
+                try:
+                    if selector.startswith("//"):
+                        element = driver.find_element(By.XPATH, selector)
+                    else:
+                        element = driver.find_element(By.CSS_SELECTOR, selector)
+                    
+                    if element:
+                        logger.info(f"✅ Найден PerimeterX элемент: {selector}")
+                        # Кликаем по элементу
+                        element.click()
+                        await asyncio.sleep(2)
+                        break
+                except:
+                    continue
+            
+            # Ждем обработки
+            await asyncio.sleep(5)
+            
+            # Проверяем результат
+            page_source = driver.page_source
+            if "px-captcha" not in page_source.lower():
+                logger.info("🎉 PerimeterX капча обойдена!")
+                return True
+            else:
+                logger.warning("⚠️ PerimeterX капча все еще активна")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка в обходе PerimeterX: {e}")
+            return False
+    
+    async def _bypass_generic_advanced(self, driver) -> bool:
+        """ПРОДВИНУТЫЙ обход общей капчи"""
+        try:
+            logger.info("🤖 Обходим общую капчу...")
+            
+            # Ищем любые кнопки или элементы капчи
+            captcha_selectors = [
+                "button[class*='captcha']",
+                "div[class*='captcha']",
+                "input[type='submit']",
+                "button[type='submit']",
+                "//button[contains(@class, 'captcha')]",
+                "//div[contains(@class, 'captcha')]"
+            ]
+            
+            for selector in captcha_selectors:
+                try:
+                    if selector.startswith("//"):
+                        element = driver.find_element(By.XPATH, selector)
+                    else:
+                        element = driver.find_element(By.CSS_SELECTOR, selector)
+                    
+                    if element:
+                        logger.info(f"✅ Найден элемент капчи: {selector}")
+                        element.click()
+                        await asyncio.sleep(3)
+                        break
+                except:
+                    continue
+            
+            # Ждем обработки
+            await asyncio.sleep(5)
+            
+            # Проверяем результат
+            page_source = driver.page_source
+            if "captcha" not in page_source.lower():
+                logger.info("🎉 Общая капча обойдена!")
+                return True
+            else:
+                logger.warning("⚠️ Общая капча все еще активна")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка в обходе общей капчи: {e}")
+            return False
+    
+    async def _retry_captcha_bypass(self, driver) -> bool:
+        """Повторная попытка обхода капчи с другим подходом"""
+        try:
+            logger.info("🔄 Повторная попытка обхода капчи...")
+            
+            # Обновляем страницу
+            driver.refresh()
+            await asyncio.sleep(3)
+            
+            # Пробуем снова
+            page_source = driver.page_source
+            if "PRESS" in page_source and "HOLD" in page_source:
+                return await self._bypass_press_hold_advanced(driver)
+            else:
+                logger.info("✅ Капча исчезла после обновления")
+                return True
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка в повторной попытке: {e}")
+            return False
+    
     async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
         """Регистрация с обходом капчи через браузер"""
         try:
@@ -196,25 +416,50 @@ class FiverrRegistrator:
             await self._kill_chrome_processes()
             await asyncio.sleep(2)
             
-            # Запускаем UNDETECTED браузер в HEADLESS режиме
-            logger.info("Запускаем undetected браузер для регистрации...")
+            # Запускаем UNDETECTED браузер с МАКСИМАЛЬНЫМИ СТЕЛС НАСТРОЙКАМИ
+            logger.info("Запускаем undetected браузер с максимальными стелс настройками...")
+            
+            # Создаем опции как у ОБЫЧНОГО пользователя
+            options = uc.ChromeOptions()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            
+            # Запускаем браузер в HEADLESS для Railway
             self.driver = uc.Chrome(
                 version_main=None,
                 headless=True,  # HEADLESS для Railway
                 use_subprocess=True,
-                no_sandbox=True,
-                disable_gpu=True,
-                disable_dev_shm_usage=True
+                options=options
             )
             
             # Устанавливаем размер окна
             self.driver.set_window_size(1920, 1080)
             
-            # Скрываем признаки автоматизации
+            # Скрываем признаки автоматизации как у ОБЫЧНОГО браузера
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             self.driver.execute_script("delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array")
             self.driver.execute_script("delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise")
             self.driver.execute_script("delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol")
+            
+            # Добавляем реалистичные свойства браузера
+            self.driver.execute_script("""
+                Object.defineProperty(navigator, 'permissions', {
+                    get: () => ({
+                        query: () => Promise.resolve({state: 'granted'})
+                    })
+                });
+            """)
+            
+            # Устанавливаем реалистичные размеры экрана
+            self.driver.execute_script("""
+                Object.defineProperty(screen, 'width', {get: () => 1920});
+                Object.defineProperty(screen, 'height', {get: () => 1080});
+                Object.defineProperty(screen, 'availWidth', {get: () => 1920});
+                Object.defineProperty(screen, 'availHeight', {get: () => 1040});
+            """)
             
             # Переходим на главную страницу (где происходит регистрация)
             logger.info("Переходим на главную страницу Fiverr...")
@@ -226,28 +471,44 @@ class FiverrRegistrator:
             # Скриншот главной страницы
             await self._take_step_screenshot(self.driver, "Главная страница Fiverr", telegram_bot, chat_id, email)
             
-            # Проверяем, есть ли капча
+            # УМНАЯ ПРОВЕРКА КАПЧИ - используем ЛУЧШИЕ ТЕХНОЛОГИИ
             page_source = self.driver.page_source
+            
+            # Проверяем разные типы капчи
+            captcha_detected = False
+            captcha_type = None
+            
             if "PRESS" in page_source and "HOLD" in page_source:
-                logger.info("Обнаружена капча PRESS & HOLD, пытаемся обойти...")
+                captcha_detected = True
+                captcha_type = "PRESS_HOLD"
+                logger.info("🎯 Обнаружена капча PRESS & HOLD - используем ПРОДВИНУТЫЙ обход...")
+            elif "px-captcha" in page_source.lower():
+                captcha_detected = True
+                captcha_type = "PERIMETERX"
+                logger.info("🛡️ Обнаружена PerimeterX капча - используем СТЕЛС обход...")
+            elif "captcha" in page_source.lower():
+                captcha_detected = True
+                captcha_type = "GENERIC"
+                logger.info("🤖 Обнаружена общая капча - используем УНИВЕРСАЛЬНЫЙ обход...")
+            
+            if captcha_detected:
+                await self._take_step_screenshot(self.driver, f"Обнаружена капча: {captcha_type}", telegram_bot, chat_id, email)
                 
-                # Скриншот перед обходом капчи
-                await self._take_step_screenshot(self.driver, "Обнаружена капча", telegram_bot, chat_id, email)
-                
-                # Обходим капчу
-                captcha_bypassed = await self._bypass_press_hold_captcha(self.driver)
+                # ПРОДВИНУТЫЙ ОБХОД КАПЧИ
+                captcha_bypassed = await self._advanced_captcha_bypass(self.driver, captcha_type)
                 
                 if not captcha_bypassed:
-                    logger.error("Не удалось обойти капчу")
+                    logger.error(f"❌ Не удалось обойти капчу {captcha_type}")
                     return {
                         "success": False,
-                        "error": "Не удалось обойти капчу PRESS & HOLD"
+                        "error": f"Не удалось обойти капчу {captcha_type}"
                     }
                 
-                logger.info("Капча успешно обойдена, продолжаем регистрацию...")
+                logger.info(f"✅ Капча {captcha_type} успешно обойдена!")
+                await self._take_step_screenshot(self.driver, f"Капча {captcha_type} обойдена", telegram_bot, chat_id, email)
                 
-                # Скриншот после обхода капчи
-                await self._take_step_screenshot(self.driver, "Капча обойдена", telegram_bot, chat_id, email)
+                # Ждем после обхода капчи
+                await asyncio.sleep(2)
             
             # Теперь заполняем форму регистрации на главной странице
             try:
