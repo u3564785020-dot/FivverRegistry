@@ -9,6 +9,8 @@ import aiohttp
 import random
 import string
 import re
+import time
+from datetime import datetime
 from typing import Optional, Dict, Any
 import logging
 logger = logging.getLogger(__name__)
@@ -232,15 +234,35 @@ class FiverrWorkingRegistrator:
             
             # Добавляем дополнительные cookies для имитации реального браузера
             additional_cookies = {
-                '_pxvid': f'px_{random.randint(100000, 999999)}',
-                '_pxff': f'{random.randint(100000, 999999)}',
-                '_px3': f'{random.randint(100000, 999999)}',
-                'pxvid': f'px_{random.randint(100000, 999999)}',
-                'pxff': f'{random.randint(100000, 999999)}',
-                'px3': f'{random.randint(100000, 999999)}',
-                'sessionid': f'session_{random.randint(100000, 999999)}',
-                'csrftoken': csrf_token if csrf_token else f'token_{random.randint(100000, 999999)}'
-            }
+                        '_pxvid': f'px_{random.randint(100000, 999999)}',
+                        '_pxff': f'{random.randint(100000, 999999)}',
+                        '_px3': f'{random.randint(100000, 999999)}',
+                        'pxvid': f'px_{random.randint(100000, 999999)}',
+                        'pxff': f'{random.randint(100000, 999999)}',
+                        'px3': f'{random.randint(100000, 999999)}',
+                        'sessionid': f'session_{random.randint(100000, 999999)}',
+                        'csrftoken': csrf_token if csrf_token else f'token_{random.randint(100000, 999999)}',
+                        '_ga': f'GA1.2.{random.randint(100000000, 999999999)}.{int(time.time())}',
+                        '_gid': f'GA1.2.{random.randint(100000000, 999999999)}.{int(time.time())}',
+                        '_fbp': f'fb.1.{int(time.time())}.{random.randint(100000000, 999999999)}',
+                        '_gcl_au': f'1.1.{random.randint(100000000, 999999999)}.{int(time.time())}',
+                        'NID': f'{random.randint(100000000, 999999999)}={random.randint(100000000, 999999999)}',
+                        '1P_JAR': f'{datetime.now().strftime("%Y-%m-%d")}-{random.randint(1, 20)}',
+                        'CONSENT': 'YES+cb.20210328-17-p0.en+FX+667',
+                        'AEC': f'AakniG{random.randint(100000000, 999999999)}',
+                        'SAPISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'APISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'SSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'HSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'SID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'SIDCC': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-1PSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-3PSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-1PAPISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-3PAPISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-1PSIDCC': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-3PSIDCC': f'{random.randint(100000000, 999999999)}/{int(time.time())}'
+                    }
             
             # Обновляем cookies
             self.cookies.update(additional_cookies)
@@ -282,7 +304,12 @@ class FiverrWorkingRegistrator:
                 'Sec-Ch-Ua-Mobile': '?0',
                 'Sec-Ch-Ua-Platform': '"Windows"',
                 'DNT': '1',
-                'Connection': 'keep-alive'
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Sec-GPC': '1',
+                'X-Forwarded-For': f'192.168.{random.randint(1,255)}.{random.randint(1,255)}',
+                'X-Real-IP': f'192.168.{random.randint(1,255)}.{random.randint(1,255)}'
             }
             
             # Добавляем CSRF токен если есть
@@ -297,11 +324,68 @@ class FiverrWorkingRegistrator:
             for key, value in registration_data.items():
                 form_data.add_field(key, str(value))
             
+            # Сначала делаем GET запрос для имитации реального браузера
+            logger.info("Выполняем предварительный GET запрос...")
+            user_agent = self._get_random_user_agent()
+            get_headers = {
+                'User-Agent': user_agent,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Referer': 'https://www.google.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Ch-Ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'DNT': '1',
+                'Connection': 'keep-alive'
+            }
+            
+            proxy_url = self.proxy.to_url() if (self.proxy and self.use_proxy) else None
+            async with self.session.get('https://it.fiverr.com/', headers=get_headers, proxy=proxy_url) as get_response:
+                logger.info(f"GET запрос выполнен: {get_response.status}")
+                # Обновляем cookies из GET ответа
+                for cookie in get_response.cookies:
+                    self.cookies[cookie.key] = cookie.value
+            
             # Добавляем задержку для имитации человеческого поведения
+            await asyncio.sleep(random.uniform(2, 5))
+            
+            # Делаем промежуточный запрос к странице регистрации
+            logger.info("Переходим на страницу регистрации...")
+            reg_headers = {
+                'User-Agent': user_agent,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Referer': 'https://it.fiverr.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Ch-Ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'DNT': '1',
+                'Connection': 'keep-alive'
+            }
+            
+            async with self.session.get('https://it.fiverr.com/register', headers=reg_headers, proxy=proxy_url) as reg_response:
+                logger.info(f"GET /register выполнен: {reg_response.status}")
+                # Обновляем cookies из ответа
+                for cookie in reg_response.cookies:
+                    self.cookies[cookie.key] = cookie.value
+            
+            # Еще одна задержка
             await asyncio.sleep(random.uniform(1, 3))
             
             # Выполняем запрос регистрации
-            proxy_url = self.proxy.to_url() if (self.proxy and self.use_proxy) else None
+            logger.info("Выполняем POST запрос регистрации...")
             async with self.session.post(url, data=form_data, headers=headers, proxy=proxy_url) as response:
                 response_text = await response.text()
                 logger.info(f"Ответ сервера: {response.status}")
