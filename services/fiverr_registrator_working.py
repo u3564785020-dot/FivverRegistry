@@ -350,7 +350,10 @@ class FiverrWorkingRegistrator:
                 logger.info(f"GET запрос выполнен: {get_response.status}")
                 # Обновляем cookies из GET ответа
                 for cookie in get_response.cookies:
-                    self.cookies[cookie.key] = cookie.value
+                    if hasattr(cookie, 'value'):
+                        self.cookies[cookie.key] = cookie.value
+                    else:
+                        self.cookies[cookie.key] = str(cookie)
             
             # Добавляем задержку для имитации человеческого поведения
             await asyncio.sleep(random.uniform(2, 5))
@@ -379,7 +382,10 @@ class FiverrWorkingRegistrator:
                 logger.info(f"GET /register выполнен: {reg_response.status}")
                 # Обновляем cookies из ответа
                 for cookie in reg_response.cookies:
-                    self.cookies[cookie.key] = cookie.value
+                    if hasattr(cookie, 'value'):
+                        self.cookies[cookie.key] = cookie.value
+                    else:
+                        self.cookies[cookie.key] = str(cookie)
             
             # Еще одна задержка
             await asyncio.sleep(random.uniform(1, 3))
@@ -398,7 +404,10 @@ class FiverrWorkingRegistrator:
                         
                         # Сохраняем cookies
                         for cookie in response.cookies:
-                            self.cookies[cookie.key] = cookie.value
+                            if hasattr(cookie, 'value'):
+                                self.cookies[cookie.key] = cookie.value
+                            else:
+                                self.cookies[cookie.key] = str(cookie)
                         
                         # Если нужен код подтверждения, получаем его
                         confirmation_code = None
