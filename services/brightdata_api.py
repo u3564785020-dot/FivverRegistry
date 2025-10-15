@@ -172,7 +172,7 @@ class BrightDataAPIService:
             if result and result.get("success"):
                 html_content = result.get("data", "")
                 
-                # Проверяем наличие капчи в HTML
+                # Проверяем наличие капчи в HTML - БОЛЕЕ СТРОГАЯ ПРОВЕРКА
                 captcha_indicators = [
                     "px-captcha",
                     "PRESS",
@@ -180,10 +180,32 @@ class BrightDataAPIService:
                     "captcha",
                     "recaptcha",
                     "hcaptcha",
-                    "cloudflare"
+                    "cloudflare",
+                    "perimeterx",
+                    "blocked",
+                    "access denied",
+                    "security check"
                 ]
                 
-                captcha_found = any(indicator.lower() in html_content.lower() for indicator in captcha_indicators)
+                # Проверяем не только наличие, но и контекст
+                html_lower = html_content.lower()
+                captcha_found = False
+                
+                for indicator in captcha_indicators:
+                    if indicator.lower() in html_lower:
+                        # Дополнительная проверка контекста
+                        if indicator in ["px-captcha", "perimeterx"]:
+                            captcha_found = True
+                            logger.warning(f"🔍 Найден индикатор капчи: {indicator}")
+                            break
+                        elif indicator in ["PRESS", "HOLD"] and "button" in html_lower:
+                            captcha_found = True
+                            logger.warning(f"🔍 Найден индикатор капчи: {indicator}")
+                            break
+                        elif indicator in ["captcha", "recaptcha", "hcaptcha"]:
+                            captcha_found = True
+                            logger.warning(f"🔍 Найден индикатор капчи: {indicator}")
+                            break
                 
                 if not captcha_found:
                     logger.info("✅ Капча успешно обойдена через BrightData!")

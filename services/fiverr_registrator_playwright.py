@@ -617,22 +617,28 @@ class FiverrRegistrator:
                     unlocked_html = await self.brightdata_service.unlock_fiverr_page("https://it.fiverr.com/")
                     
                     if unlocked_html:
-                        # Создаем браузер и загружаем разблокированную страницу
-                        if not await self._create_stealth_browser():
-                            return {
-                                "success": False,
-                                "error": "Не удалось создать браузер с стелс настройками"
-                            }
-                        
-                        # Загружаем разблокированную HTML страницу
-                        await self.page.set_content(unlocked_html)
-                        logger.info("✅ Разблокированная страница загружена в браузер")
-                        
-                        # Скриншот разблокированной страницы
-                        await self._take_step_screenshot("Страница разблокирована через BrightData", telegram_bot, chat_id, email)
-                        
-                        # Пропускаем обход капчи и переходим к регистрации
-                        return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+                        # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: убеждаемся что капча действительно обойдена
+                        if "px-captcha" not in unlocked_html.lower() and "PRESS" not in unlocked_html.upper():
+                            logger.info("✅ Подтверждено: капча полностью обойдена через BrightData!")
+                            
+                            # Создаем браузер и загружаем разблокированную страницу
+                            if not await self._create_stealth_browser():
+                                return {
+                                    "success": False,
+                                    "error": "Не удалось создать браузер с стелс настройками"
+                                }
+                            
+                            # Загружаем разблокированную HTML страницу
+                            await self.page.set_content(unlocked_html)
+                            logger.info("✅ Разблокированная страница загружена в браузер")
+                            
+                            # Скриншот разблокированной страницы
+                            await self._take_step_screenshot("Страница разблокирована через BrightData", telegram_bot, chat_id, email)
+                            
+                            # Пропускаем обход капчи и переходим к регистрации
+                            return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+                        else:
+                            logger.warning("⚠️ BrightData разблокировал страницу, но капча все еще присутствует. Пробуем обычный способ...")
                     else:
                         logger.warning("⚠️ Не удалось получить разблокированную страницу, пробуем обычный способ...")
                 else:
@@ -650,7 +656,7 @@ class FiverrRegistrator:
             
             # Переходим на главную страницу (где происходит регистрация)
             logger.info("Переходим на главную страницу Fiverr...")
-            await self.page.goto("https://it.fiverr.com/", wait_until="networkidle")
+            await self.page.goto("https://it.fiverr.com/", wait_until="networkidle", timeout=60000)
             
             # Ждем загрузки
             await asyncio.sleep(3)
