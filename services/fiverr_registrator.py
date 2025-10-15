@@ -162,6 +162,29 @@ class FiverrRegistrator:
             logger.error(f"Ошибка при обходе капчи: {e}")
             return False
 
+    async def _take_step_screenshot(self, driver, step_name: str, telegram_bot = None, chat_id: int = None, email: str = None) -> None:
+        """Отправка скриншота текущего этапа в Telegram"""
+        if not telegram_bot or not chat_id:
+            return
+            
+        try:
+            screenshot = driver.get_screenshot_as_png()
+            from io import BytesIO
+            screenshot_file = BytesIO(screenshot)
+            screenshot_file.name = f"{step_name}_{email or 'unknown'}.png"
+            
+            await telegram_bot.send_photo(
+                chat_id=chat_id,
+                photo=screenshot_file,
+                caption=f"📸 <b>{step_name}</b>\n\n"
+                       f"📧 Email: <code>{email or 'N/A'}</code>\n"
+                       f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}",
+                parse_mode='HTML'
+            )
+            logger.info(f"Скриншот этапа '{step_name}' отправлен в Telegram")
+        except Exception as e:
+            logger.warning(f"Ошибка отправки скриншота этапа '{step_name}': {e}")
+
     async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
         """Регистрация с обходом капчи через браузер"""
         if not SELENIUM_AVAILABLE:
@@ -227,6 +250,9 @@ class FiverrRegistrator:
             # Ждем загрузки
             await asyncio.sleep(3)
             
+            # Скриншот главной страницы
+            await self._take_step_screenshot(driver, "Главная страница Fiverr", telegram_bot, chat_id, email)
+            
             # Проверяем, есть ли капча
             page_source = driver.page_source
             if "PRESS" in page_source and "HOLD" in page_source:
@@ -263,6 +289,9 @@ class FiverrRegistrator:
                     }
                 
                 logger.info("Капча успешно обойдена, продолжаем регистрацию...")
+                
+                # Скриншот после обхода капчи
+                await self._take_step_screenshot(driver, "Капча обойдена", telegram_bot, chat_id, email)
             
             # Теперь заполняем форму регистрации на главной странице
             try:
@@ -334,6 +363,9 @@ class FiverrRegistrator:
                 email_field.send_keys(email)
                 logger.info("Поле email заполнено")
                 
+                # Скриншот после заполнения email
+                await self._take_step_screenshot(driver, "Email заполнен", telegram_bot, chat_id, email)
+                
                 password_field.clear()
                 password_field.send_keys(password)
                 logger.info("Поле password заполнено")
@@ -347,6 +379,9 @@ class FiverrRegistrator:
                     logger.info("Поле username не найдено - возможно необязательное")
                 
                 logger.info("Поля формы заполнены")
+                
+                # Скриншот после заполнения всех полей
+                await self._take_step_screenshot(driver, "Все поля заполнены", telegram_bot, chat_id, email)
                 
                 # Ищем кнопку регистрации на главной странице
                 submit_selectors = [
@@ -393,6 +428,9 @@ class FiverrRegistrator:
                 submit_button.click()
                 logger.info("Кнопка регистрации нажата")
                 
+                # Скриншот после нажатия кнопки регистрации
+                await self._take_step_screenshot(driver, "Кнопка регистрации нажата", telegram_bot, chat_id, email)
+                
                 # Ждем результата
                 await asyncio.sleep(5)
                 
@@ -402,6 +440,9 @@ class FiverrRegistrator:
                 
                 if "success" in page_source.lower() or "welcome" in page_source.lower() or "dashboard" in current_url:
                     logger.info("Регистрация успешна!")
+                    
+                    # Скриншот успешной регистрации
+                    await self._take_step_screenshot(driver, "Регистрация успешна!", telegram_bot, chat_id, email)
                     
                     # Получаем cookies
                     cookies = {}

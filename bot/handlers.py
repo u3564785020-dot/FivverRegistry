@@ -341,16 +341,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         proxies = []
         invalid_proxies = []
         
-        for proxy_str in proxies_text:
+        # Проверяем каждый прокси
+        await update.message.reply_text("🔍 Проверяю прокси...")
+        
+        for i, proxy_str in enumerate(proxies_text):
             proxy_str = proxy_str.strip()
             if not proxy_str:
                 continue
             
             proxy = ProxyConfig.from_string(proxy_str)
             if proxy:
-                proxies.append(proxy)
+                # Проверяем работоспособность прокси
+                await update.message.reply_text(f"⏳ Проверяю прокси {i+1}/{len(proxies_text)}...")
+                
+                is_working = await ProxyManager.check_proxy(proxy)
+                if is_working:
+                    proxies.append(proxy)
+                    await update.message.reply_text(f"✅ Прокси {i+1} рабочий!")
+                else:
+                    invalid_proxies.append(proxy_str)
+                    await update.message.reply_text(f"❌ Прокси {i+1} не работает!")
             else:
                 invalid_proxies.append(proxy_str)
+                await update.message.reply_text(f"❌ Прокси {i+1} неверный формат!")
         
         if invalid_proxies:
             await update.message.reply_text(
