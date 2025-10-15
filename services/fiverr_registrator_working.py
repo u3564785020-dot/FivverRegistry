@@ -350,10 +350,19 @@ class FiverrWorkingRegistrator:
                 logger.info(f"GET запрос выполнен: {get_response.status}")
                 # Обновляем cookies из GET ответа
                 for cookie in get_response.cookies:
-                    if hasattr(cookie, 'value'):
-                        self.cookies[cookie.key] = cookie.value
-                    else:
-                        self.cookies[cookie.key] = str(cookie)
+                    try:
+                        if hasattr(cookie, 'key') and hasattr(cookie, 'value'):
+                            self.cookies[cookie.key] = cookie.value
+                        elif hasattr(cookie, 'key'):
+                            self.cookies[cookie.key] = str(cookie)
+                        else:
+                            # Если это строка, добавляем как есть
+                            cookie_str = str(cookie)
+                            if '=' in cookie_str:
+                                key, value = cookie_str.split('=', 1)
+                                self.cookies[key] = value
+                    except Exception as e:
+                        logger.warning(f"Ошибка обработки cookie: {e}")
             
             # Добавляем задержку для имитации человеческого поведения
             await asyncio.sleep(random.uniform(2, 5))
@@ -382,10 +391,19 @@ class FiverrWorkingRegistrator:
                 logger.info(f"GET /register выполнен: {reg_response.status}")
                 # Обновляем cookies из ответа
                 for cookie in reg_response.cookies:
-                    if hasattr(cookie, 'value'):
-                        self.cookies[cookie.key] = cookie.value
-                    else:
-                        self.cookies[cookie.key] = str(cookie)
+                    try:
+                        if hasattr(cookie, 'key') and hasattr(cookie, 'value'):
+                            self.cookies[cookie.key] = cookie.value
+                        elif hasattr(cookie, 'key'):
+                            self.cookies[cookie.key] = str(cookie)
+                        else:
+                            # Если это строка, добавляем как есть
+                            cookie_str = str(cookie)
+                            if '=' in cookie_str:
+                                key, value = cookie_str.split('=', 1)
+                                self.cookies[key] = value
+                    except Exception as e:
+                        logger.warning(f"Ошибка обработки cookie: {e}")
             
             # Еще одна задержка
             await asyncio.sleep(random.uniform(1, 3))
@@ -404,10 +422,19 @@ class FiverrWorkingRegistrator:
                         
                         # Сохраняем cookies
                         for cookie in response.cookies:
-                            if hasattr(cookie, 'value'):
-                                self.cookies[cookie.key] = cookie.value
-                            else:
-                                self.cookies[cookie.key] = str(cookie)
+                            try:
+                                if hasattr(cookie, 'key') and hasattr(cookie, 'value'):
+                                    self.cookies[cookie.key] = cookie.value
+                                elif hasattr(cookie, 'key'):
+                                    self.cookies[cookie.key] = str(cookie)
+                                else:
+                                    # Если это строка, добавляем как есть
+                                    cookie_str = str(cookie)
+                                    if '=' in cookie_str:
+                                        key, value = cookie_str.split('=', 1)
+                                        self.cookies[key] = value
+                            except Exception as e:
+                                logger.warning(f"Ошибка обработки cookie: {e}")
                         
                         # Если нужен код подтверждения, получаем его
                         confirmation_code = None
