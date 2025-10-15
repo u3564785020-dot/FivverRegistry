@@ -82,9 +82,14 @@ class FiverrRegistrator:
         ]
         return random.choice(user_agents)
     
-    def _setup_chrome_options(self) -> Options:
+    def _setup_chrome_options(self, unique_id: str = None) -> Options:
         """Настройка Chrome для максимальной скрытности"""
         options = Options()
+        
+        # УНИКАЛЬНАЯ ПАПКА ДЛЯ КАЖДОГО ЗАПУСКА
+        if not unique_id:
+            unique_id = uuid.uuid4().hex[:8]
+        user_data_dir = f"/tmp/chrome_user_data_{unique_id}"
         
         # Базовые настройки скрытности
         options.add_argument("--no-sandbox")
@@ -94,8 +99,6 @@ class FiverrRegistrator:
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins")
-        options.add_argument("--disable-images")
-        options.add_argument("--disable-javascript")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-first-run")
         options.add_argument("--no-default-browser-check")
@@ -116,26 +119,9 @@ class FiverrRegistrator:
         options.add_argument("--disable-domain-reliability")
         options.add_argument("--disable-component-update")
         options.add_argument("--disable-features=TranslateUI")
-        options.add_argument("--disable-ipc-flooding-protection")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-client-side-phishing-detection")
-        options.add_argument("--disable-sync")
-        options.add_argument("--metrics-recording-only")
-        options.add_argument("--no-report-upload")
-        options.add_argument("--safebrowsing-disable-auto-update")
-        options.add_argument("--disable-ipc-flooding-protection")
-        options.add_argument("--disable-hang-monitor")
-        options.add_argument("--disable-prompt-on-repost")
-        options.add_argument("--disable-domain-reliability")
-        options.add_argument("--disable-component-update")
-        options.add_argument("--disable-features=TranslateUI")
         
-        # Режим инкогнито для изоляции
-        options.add_argument("--incognito")
-        options.add_argument("--no-user-data-dir")
+        # УНИКАЛЬНАЯ ПАПКА ПОЛЬЗОВАТЕЛЯ
+        options.add_argument(f"--user-data-dir={user_data_dir}")
         
         # User-Agent
         options.add_argument(f"--user-agent={self._get_random_user_agent()}")
@@ -265,13 +251,18 @@ class FiverrRegistrator:
     
     async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
         """Регистрация с обходом капчи через браузер"""
+        user_data_dir = None
         try:
             # Убиваем все процессы Chrome
             await self._kill_chrome_processes()
             await asyncio.sleep(2)
             
-            # Настраиваем Chrome
-            options = self._setup_chrome_options()
+            # Получаем уникальный ID для папки
+            unique_id = uuid.uuid4().hex[:8]
+            user_data_dir = f"/tmp/chrome_user_data_{unique_id}"
+            
+            # Настраиваем Chrome с уникальной папкой
+            options = self._setup_chrome_options(unique_id)
             
             # Запускаем браузер
             logger.info("Запускаем браузер для регистрации...")
@@ -507,6 +498,14 @@ class FiverrRegistrator:
                     self.driver.quit()
                 except:
                     pass
+                
+                # Очищаем временную папку
+                if user_data_dir:
+                    try:
+                        shutil.rmtree(user_data_dir, ignore_errors=True)
+                        logger.info(f"Временная папка очищена: {user_data_dir}")
+                    except:
+                        pass
     
     async def register_account(self, email: str, email_service: EmailAPIService, email_id: str = None, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
         """Регистрация аккаунта ТОЛЬКО через браузер"""
