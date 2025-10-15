@@ -370,10 +370,25 @@ class FiverrWorkingRegistrator:
             options.add_experimental_option('useAutomationExtension', False)
             options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
             
+            # Уникальный user-data-dir для избежания конфликтов
+            import uuid
+            unique_id = uuid.uuid4().hex[:8]
+            options.add_argument(f"--user-data-dir=/tmp/chrome_user_data_{unique_id}")
+            options.add_argument("--incognito")
+            
             # Настройка прокси если есть
             if self.proxy:
                 proxy_url = f"http://{self.proxy.username}:{self.proxy.password}@{self.proxy.host}:{self.proxy.port}"
                 options.add_argument(f"--proxy-server={proxy_url}")
+            
+            # Очищаем процессы Chrome перед запуском
+            import subprocess
+            try:
+                subprocess.run(["pkill", "-f", "chrome"], check=False)
+                subprocess.run(["pkill", "-f", "chromedriver"], check=False)
+                time.sleep(1)
+            except:
+                pass
             
             driver = webdriver.Chrome(options=options)
             
