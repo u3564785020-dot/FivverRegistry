@@ -370,8 +370,9 @@ class FiverrWorkingRegistrator:
             options.add_experimental_option('useAutomationExtension', False)
             options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
             
-            # Убираем user-data-dir полностью и используем incognito
+            # Явно отключаем user-data-dir и используем incognito
             options.add_argument("--incognito")
+            options.add_argument("--no-user-data-dir")
             options.add_argument("--disable-extensions")
             options.add_argument("--disable-plugins")
             options.add_argument("--disable-images")
@@ -380,6 +381,12 @@ class FiverrWorkingRegistrator:
             options.add_argument("--disable-background-timer-throttling")
             options.add_argument("--disable-renderer-backgrounding")
             options.add_argument("--disable-backgrounding-occluded-windows")
+            options.add_argument("--disable-sync")
+            options.add_argument("--disable-translate")
+            options.add_argument("--disable-logging")
+            options.add_argument("--disable-gpu-logging")
+            options.add_argument("--silent")
+            options.add_argument("--log-level=3")
             
             # Настройка прокси если есть
             if self.proxy:
@@ -396,15 +403,35 @@ class FiverrWorkingRegistrator:
                 subprocess.run(["pkill", "-9", "-f", "google-chrome"], check=False)
                 
                 # Очищаем временные файлы Chrome
-                temp_dirs = ["/tmp/.com.google.Chrome*", "/tmp/chrome_user_data*"]
+                temp_dirs = ["/tmp/.com.google.Chrome*", "/tmp/chrome_user_data*", "/tmp/.X*"]
                 for temp_dir in temp_dirs:
                     subprocess.run(["rm", "-rf", temp_dir], check=False)
                 
-                time.sleep(2)
+                time.sleep(3)
             except:
                 pass
             
-            driver = webdriver.Chrome(options=options)
+            # Пробуем запустить Chrome с минимальными настройками
+            try:
+                driver = webdriver.Chrome(options=options)
+            except Exception as e:
+                logger.error(f"Ошибка запуска Chrome: {e}")
+                # Пробуем без прокси если есть
+                if self.proxy:
+                    logger.info("Пробуем запустить Chrome без прокси...")
+                    options_no_proxy = Options()
+                    options_no_proxy.add_argument("--no-sandbox")
+                    options_no_proxy.add_argument("--disable-dev-shm-usage")
+                    options_no_proxy.add_argument("--incognito")
+                    options_no_proxy.add_argument("--no-user-data-dir")
+                    options_no_proxy.add_argument("--disable-blink-features=AutomationControlled")
+                    options_no_proxy.add_experimental_option("excludeSwitches", ["enable-automation"])
+                    options_no_proxy.add_experimental_option('useAutomationExtension', False)
+                    options_no_proxy.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+                    
+                    driver = webdriver.Chrome(options=options_no_proxy)
+                else:
+                    raise e
             
             try:
                 # Убираем признаки автоматизации
