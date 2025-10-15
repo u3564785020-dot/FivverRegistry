@@ -21,6 +21,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+import undetected_chromedriver as uc
 
 from utils.logger import logger
 from services.proxy_manager import ProxyConfig
@@ -82,65 +83,6 @@ class FiverrRegistrator:
         ]
         return random.choice(user_agents)
     
-    def _setup_chrome_options(self) -> Options:
-        """Настройка Chrome для максимальной скрытности"""
-        options = Options()
-        
-        # Базовые настройки скрытности
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-first-run")
-        options.add_argument("--no-default-browser-check")
-        options.add_argument("--disable-default-apps")
-        options.add_argument("--disable-popup-blocking")
-        options.add_argument("--disable-translate")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-client-side-phishing-detection")
-        options.add_argument("--disable-sync")
-        options.add_argument("--metrics-recording-only")
-        options.add_argument("--no-report-upload")
-        options.add_argument("--safebrowsing-disable-auto-update")
-        options.add_argument("--disable-ipc-flooding-protection")
-        options.add_argument("--disable-hang-monitor")
-        options.add_argument("--disable-prompt-on-repost")
-        options.add_argument("--disable-domain-reliability")
-        options.add_argument("--disable-component-update")
-        options.add_argument("--disable-features=TranslateUI")
-        
-        # РЕЖИМ ИНКОГНИТО БЕЗ user-data-dir
-        options.add_argument("--incognito")
-        options.add_argument("--no-user-data-dir")
-        options.add_argument("--disable-web-security")
-        options.add_argument("--disable-features=VizDisplayCompositor")
-        
-        # User-Agent
-        options.add_argument(f"--user-agent={self._get_random_user_agent()}")
-        
-        # Размер окна
-        options.add_argument("--window-size=1920,1080")
-        
-        # Отключаем логи
-        options.add_argument("--log-level=3")
-        options.add_argument("--silent")
-        
-        # Отключаем уведомления
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_settings.popups": 0,
-            "profile.managed_default_content_settings.images": 2,
-            "profile.default_content_setting_values.media_stream": 2,
-        }
-        options.add_experimental_option("prefs", prefs)
-        
-        return options
     
     async def _kill_chrome_processes(self):
         """Принудительное завершение всех процессов Chrome"""
@@ -254,12 +196,16 @@ class FiverrRegistrator:
             await self._kill_chrome_processes()
             await asyncio.sleep(2)
             
-            # Настраиваем Chrome БЕЗ user-data-dir
-            options = self._setup_chrome_options()
-            
-            # Запускаем браузер
-            logger.info("Запускаем браузер для регистрации...")
-            self.driver = webdriver.Chrome(options=options)
+            # Запускаем UNDETECTED браузер
+            logger.info("Запускаем undetected браузер для регистрации...")
+            self.driver = uc.Chrome(
+                version_main=None,
+                headless=False,
+                use_subprocess=True,
+                no_sandbox=True,
+                disable_gpu=True,
+                disable_dev_shm_usage=True
+            )
             
             # Устанавливаем размер окна
             self.driver.set_window_size(1920, 1080)
