@@ -3,6 +3,7 @@
 """
 import asyncio
 import uuid
+import io
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -10,7 +11,7 @@ from utils.logger import logger
 from services.database import db
 from services.email_api import EmailAPIService
 from services.proxy_manager import ProxyConfig, ProxyManager
-from services.fiverr_registrator_http import FiverrHTTPRegistrator, register_accounts_batch
+from services.fiverr_registrator_working import FiverrWorkingRegistrator, register_accounts_batch
 from config import ADMIN_IDS, MAX_CONCURRENT_REGISTRATIONS
 
 
@@ -337,16 +338,32 @@ async def run_registration_task(
                         proxy=result.get('proxy')
                     )
                     
-                    # Отправляем cookies пользователю
-                    cookies_file = result['cookies_file']
-                    await update.effective_chat.send_document(
-                        document=open(cookies_file, 'rb'),
-                        caption=f"""
-✅ <b>Аккаунт #{successful}</b>
+                    # Создаем cookies файл
+                    cookies_text = ""
+                    if 'cookies' in result:
+                        for name, value in result['cookies'].items():
+                            cookies_text += f"{name}={value}\n"
+                    
+                    # Отправляем cookies файл
+                    cookies_file = io.BytesIO(cookies_text.encode('utf-8'))
+                    cookies_file.name = f"cookies_{result['email']}.txt"
+                    
+                    # Формируем сообщение с деталями аккаунта
+                    account_details = f"""✅ <b>Аккаунт #{successful}</b>
 
-Email: <code>{result['email']}</code>
-Пароль: <code>{result['password']}</code>
-""",
+📧 Email: <code>{result['email']}</code>
+👤 Username: <code>{result.get('username', 'N/A')}</code>
+🔑 Password: <code>{result['password']}</code>"""
+
+                    # Добавляем код подтверждения если есть
+                    if result.get('confirmation_code'):
+                        account_details += f"\n🔐 Код подтверждения: <code>{result['confirmation_code']}</code>"
+                    
+                    account_details += "\n\n📁 Cookies файл прикреплен ниже."
+                    
+                    await update.effective_chat.send_document(
+                        document=cookies_file,
+                        caption=account_details,
                         parse_mode=ParseMode.HTML
                     )
                     
