@@ -4,7 +4,7 @@ FROM python:3.11-bookworm
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Устанавливаем системные зависимости для Playwright
+# Устанавливаем системные зависимости для Playwright и Selenium
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем файл зависимостей
