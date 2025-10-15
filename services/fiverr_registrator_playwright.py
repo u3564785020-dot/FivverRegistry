@@ -53,18 +53,21 @@ SCREEN_RESOLUTIONS = [
 
 from services.proxy_manager import ProxyConfig
 from services.email_api import EmailAPIService
+from services.brightdata_api import BrightDataAPIService
 
 
 class FiverrRegistrator:
     """Регистратор аккаунтов Fiverr через PLAYWRIGHT с ПРОФЕССИОНАЛЬНЫМ СТЕЛСОМ"""
     
-    def __init__(self, proxy: Optional[ProxyConfig] = None, use_proxy: bool = True):
+    def __init__(self, proxy: Optional[ProxyConfig] = None, use_proxy: bool = True, use_brightdata: bool = True):
         self.proxy = proxy
         self.use_proxy = use_proxy
+        self.use_brightdata = use_brightdata
         self.browser = None
         self.context = None
         self.page = None
         self.playwright = None
+        self.brightdata_service = BrightDataAPIService() if use_brightdata else None
 
     async def _kill_chrome_processes(self):
         """Убиваем все процессы Chrome/Chromium"""
@@ -598,8 +601,46 @@ class FiverrRegistrator:
             return False
 
     async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot=None, chat_id: int = None) -> Dict[str, Any]:
-        """Регистрация с обходом капчи через PLAYWRIGHT"""
+        """Регистрация с обходом капчи через PLAYWRIGHT + BRIGHTDATA"""
         try:
+            # Сначала пробуем обойти капчу через BrightData
+            if self.use_brightdata and self.brightdata_service:
+                logger.info("🚀 Пробуем обойти капчу через BrightData...")
+                
+                # Проверяем обход капчи
+                captcha_bypassed = await self.brightdata_service.check_captcha_bypass("https://it.fiverr.com/")
+                
+                if captcha_bypassed:
+                    logger.info("✅ Капча обойдена через BrightData! Используем разблокированную страницу...")
+                    
+                    # Получаем разблокированную страницу
+                    unlocked_html = await self.brightdata_service.unlock_fiverr_page("https://it.fiverr.com/")
+                    
+                    if unlocked_html:
+                        # Создаем браузер и загружаем разблокированную страницу
+                        if not await self._create_stealth_browser():
+                            return {
+                                "success": False,
+                                "error": "Не удалось создать браузер с стелс настройками"
+                            }
+                        
+                        # Загружаем разблокированную HTML страницу
+                        await self.page.set_content(unlocked_html)
+                        logger.info("✅ Разблокированная страница загружена в браузер")
+                        
+                        # Скриншот разблокированной страницы
+                        await self._take_step_screenshot("Страница разблокирована через BrightData", telegram_bot, chat_id, email)
+                        
+                        # Пропускаем обход капчи и переходим к регистрации
+                        return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+                    else:
+                        logger.warning("⚠️ Не удалось получить разблокированную страницу, пробуем обычный способ...")
+                else:
+                    logger.warning("⚠️ BrightData не смог обойти капчу, пробуем обычный способ...")
+            
+            # Обычный способ через браузер
+            logger.info("🌐 Используем обычный способ обхода капчи через браузер...")
+            
             # Создаем браузер с ПРОФЕССИОНАЛЬНЫМ СТЕЛСОМ
             if not await self._create_stealth_browser():
                 return {
@@ -660,6 +701,38 @@ class FiverrRegistrator:
                 
                 # Ждем после обхода капчи
                 await asyncio.sleep(2)
+            
+            # Заполняем форму регистрации
+            return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка при регистрации: {e}")
+            return {
+                "success": False,
+                "error": f"Критическая ошибка: {str(e)}"
+            }
+        finally:
+            # Закрываем браузер
+            if self.browser:
+                try:
+                    await self.browser.close()
+                except:
+                    pass
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except:
+                    pass
+            if self.brightdata_service:
+                try:
+                    await self.brightdata_service.close()
+                except:
+                    pass
+
+    async def _fill_registration_form(self, email: str, username: str, password: str, telegram_bot=None, chat_id: int = None) -> Dict[str, Any]:
+        """Заполнение формы регистрации"""
+        try:
+            logger.info("📝 Заполняем форму регистрации...")
             
             # Теперь заполняем форму регистрации
             try:

@@ -459,8 +459,8 @@ async def run_registration_task_simple(
             if proxies and len(proxies) > 0:
                 proxy_config = proxies[0]
             
-            # Создаем регистратор
-            registrator = FiverrRegistrator(proxy=proxy_config, use_proxy=use_proxy)
+            # Создаем регистратор с BrightData
+            registrator = FiverrRegistrator(proxy=proxy_config, use_proxy=use_proxy, use_brightdata=True)
             
             # Запускаем регистрацию через метод класса
             results = await registrator.register_accounts_batch(
