@@ -196,11 +196,11 @@ class FiverrRegistrator:
             await self._kill_chrome_processes()
             await asyncio.sleep(2)
             
-            # Запускаем UNDETECTED браузер
+            # Запускаем UNDETECTED браузер в HEADLESS режиме
             logger.info("Запускаем undetected браузер для регистрации...")
             self.driver = uc.Chrome(
                 version_main=None,
-                headless=False,
+                headless=True,  # HEADLESS для Railway
                 use_subprocess=True,
                 no_sandbox=True,
                 disable_gpu=True,
