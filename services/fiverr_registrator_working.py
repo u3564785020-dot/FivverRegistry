@@ -201,10 +201,25 @@ class FiverrWorkingRegistrator:
         try:
             logger.info(f"Начинаем регистрацию аккаунта с email: {email}")
             
-            # Получаем CSRF токен
+            # Получаем CSRF токен и cookies
             csrf_token = await self._get_csrf_token()
             if not csrf_token:
                 logger.warning("CSRF токен не найден, продолжаем без него")
+            
+            # Добавляем дополнительные cookies для имитации реального браузера
+            additional_cookies = {
+                '_pxvid': f'px_{random.randint(100000, 999999)}',
+                '_pxff': f'{random.randint(100000, 999999)}',
+                '_px3': f'{random.randint(100000, 999999)}',
+                'pxvid': f'px_{random.randint(100000, 999999)}',
+                'pxff': f'{random.randint(100000, 999999)}',
+                'px3': f'{random.randint(100000, 999999)}',
+                'sessionid': f'session_{random.randint(100000, 999999)}',
+                'csrftoken': csrf_token if csrf_token else f'token_{random.randint(100000, 999999)}'
+            }
+            
+            # Обновляем cookies
+            self.cookies.update(additional_cookies)
             
             # Генерируем username и проверяем доступность
             # Генерируем username (без проверки доступности)
@@ -223,20 +238,27 @@ class FiverrWorkingRegistrator:
                 'funnel': 'standard'
             }
             
-            # Подготавливаем заголовки
+            # Подготавливаем заголовки (улучшенные для обхода PerimeterX)
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
                 'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Content-Type': 'multipart/form-data',
+                'Content-Type': 'multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW',
                 'Origin': 'https://it.fiverr.com',
-                'Referer': 'https://it.fiverr.com/login?source=top_nav',
+                'Referer': 'https://it.fiverr.com/',
                 'X-Requested-With': 'XMLHttpRequest',
                 'Sec-Fetch-Dest': 'empty',
                 'Sec-Fetch-Mode': 'cors',
                 'Sec-Fetch-Site': 'same-origin',
-                'Priority': 'u=1, i'
+                'Sec-Fetch-User': '?1',
+                'Priority': 'u=1, i',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Ch-Ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'DNT': '1',
+                'Connection': 'keep-alive'
             }
             
             # Добавляем CSRF токен если есть
@@ -250,6 +272,9 @@ class FiverrWorkingRegistrator:
             form_data = aiohttp.FormData()
             for key, value in registration_data.items():
                 form_data.add_field(key, str(value))
+            
+            # Добавляем задержку для имитации человеческого поведения
+            await asyncio.sleep(random.uniform(1, 3))
             
             # Выполняем запрос регистрации
             async with self.session.post(url, data=form_data, headers=headers) as response:
