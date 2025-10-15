@@ -138,7 +138,8 @@ class BrightDataAPIService:
         try:
             logger.info(f"🔓 Разблокируем страницу Fiverr через BrightData...")
             
-            result = await self.unlock_url(page_url, format="html")
+            # Используем "raw" формат вместо "html"
+            result = await self.unlock_url(page_url, format="raw")
             
             if result and result.get("success"):
                 html_content = result.get("data", "")
@@ -165,7 +166,8 @@ class BrightDataAPIService:
         try:
             logger.info(f"🔍 Проверяем обход капчи на {page_url}...")
             
-            result = await self.unlock_url(page_url, format="html")
+            # Используем "raw" формат вместо "html"
+            result = await self.unlock_url(page_url, format="raw")
             
             if result and result.get("success"):
                 html_content = result.get("data", "")
