@@ -99,8 +99,19 @@ class FiverrRegistrator:
         # Уникальная папка для каждого экземпляра
         import tempfile
         import uuid
-        user_data_dir = f"/tmp/chrome_user_data_{uuid.uuid4().hex[:8]}"
+        import os
+        import time
+        
+        # Создаем уникальную папку с timestamp и random
+        unique_id = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+        user_data_dir = f"/tmp/chrome_user_data_{unique_id}"
+        
+        # Создаем папку если не существует
+        os.makedirs(user_data_dir, exist_ok=True)
+        
         options.add_argument(f"--user-data-dir={user_data_dir}")
+        options.add_argument("--no-first-run")
+        options.add_argument("--disable-default-apps")
         
         # USER AGENT
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
