@@ -10,7 +10,7 @@ from utils.logger import logger
 from services.database import db
 from services.email_api import EmailAPIService
 from services.proxy_manager import ProxyConfig, ProxyManager
-from services.fiverr_registrator import FiverrRegistrator, register_accounts_batch
+from services.fiverr_registrator_selenium import FiverrRegistrator, register_accounts_batch
 from config import ADMIN_IDS, MAX_CONCURRENT_REGISTRATIONS
 
 
