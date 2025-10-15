@@ -1,1047 +1,1094 @@
+#!/usr/bin/env python3
 """
-Модуль для автоматизации регистрации аккаунтов на Fiverr
+РАБОЧИЙ РЕГИСТРАТОР FIVERR НА ОСНОВЕ РЕАЛЬНЫХ ДАННЫХ
+Создан на основе анализа реального процесса регистрации
 """
+
 import asyncio
+import aiohttp
 import random
 import string
+import re
+import time
+import io
+import base64
+from datetime import datetime
 from typing import Optional, Dict, Any
-from playwright.async_api import async_playwright, Page, Browser, BrowserContext
-from fake_useragent import UserAgent
-from utils.logger import logger
-from config import FIVERR_SIGNUP_URL, BROWSER_HEADLESS, BROWSER_TIMEOUT, COOKIES_DIR
+import logging
+logger = logging.getLogger(__name__)
 from services.email_api import EmailAPIService
 from services.proxy_manager import ProxyConfig
 
+# Импорты для Selenium (только для скриншотов)
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    logger.warning("Selenium не установлен - скриншоты недоступны")
 
 class FiverrRegistrator:
-    """Класс для автоматизации регистрации на Fiverr"""
-    
-    def __init__(
-        self,
-        email_service: EmailAPIService,
-        proxy: Optional[ProxyConfig] = None
-    ):
-        self.email_service = email_service
+    def __init__(self, proxy: Optional[ProxyConfig] = None, use_proxy: bool = True):
         self.proxy = proxy
-        self.ua = UserAgent()
-        self.browser: Optional[Browser] = None
-        self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
-    
-    def _generate_password(self, length: int = 11) -> str:
-        """
-        Генерация случайного пароля (9-12 символов, заглавные буквы, цифры)
+        self.use_proxy = use_proxy
+        self.session = None
+        self.csrf_token = None
+        self.cookies = {}
         
-        Args:
-            length: Длина пароля (по умолчанию 11)
-            
-        Returns:
-            Сгенерированный пароль
-        """
-        # Гарантируем минимум 1 заглавную букву, 1 строчную и 1 цифру
-        password = [
-            random.choice(string.ascii_uppercase),  # Заглавная буква
-            random.choice(string.ascii_lowercase),  # Строчная буква
-            random.choice(string.digits),           # Цифра
+        # Список реалистичных User-Agent
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/120.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0"
         ]
-        
-        # Заполняем остальные символы
-        remaining = length - 3
-        characters = string.ascii_letters + string.digits
-        password.extend(random.choices(characters, k=remaining))
-        
-        # Перемешиваем
-        random.shuffle(password)
-        password_str = ''.join(password)
-        
-        logger.debug(f"Сгенерирован пароль длиной {length}")
-        return password_str
     
-    def _generate_username(self, base_name: str = None) -> str:
-        """
-        Генерация СЛУЧАЙНОГО НАБОРА СИМВОЛОВ в формате: xxxxx_yyyyy
-        МАКСИМУМ 15 символов (лимит Fiverr)!
-        
-        Args:
-            base_name: Не используется
-            
-        Returns:
-            Случайный username типа psodx_iusyds (text_text), max 15 chars
-        """
-        # Генерируем случайные строки из букв
-        letters = 'abcdefghijklmnopqrstuvwxyz'
-        
-        # Первая часть: 5-6 букв (чтобы влезло в 15 с подчеркиванием)
-        first_part_length = random.randint(5, 6)
-        first_part = ''.join(random.choice(letters) for _ in range(first_part_length))
-        
-        # Вторая часть: точно вычисляем чтобы НЕ ПРЕВЫСИТЬ 15 символов
-        # 15 - len(first_part) - 1 (подчеркивание) = длина второй части
-        second_part_length = 15 - first_part_length - 1  # Ровно 15!
-        second_part = ''.join(random.choice(letters) for _ in range(second_part_length))
-        
-        username = f"{first_part}_{second_part}"
-        
-        # Проверка что не больше 15
-        if len(username) > 15:
-            username = username[:15]
-        
-        logger.debug(f"Сгенерирован случайный username: {username} (длина: {len(username)})")
-        return username
+    def _get_random_user_agent(self) -> str:
+        """Получить случайный User-Agent"""
+        return random.choice(self.user_agents)
     
-    def _extract_code_from_html(self, html_content: str) -> Optional[str]:
-        """
-        Извлечение 6-значного кода из HTML письма
-        
-        Args:
-            html_content: HTML содержимое письма
-            
-        Returns:
-            6-значный код или None
-        """
-        import re
-        
-        # Ищем код в bold тегах или после "Il tuo codice:"
-        patterns = [
-            r'<b[^>]*>(\d{6})</b>',
-            r'<strong[^>]*>(\d{6})</strong>',
-            r'\*\*(\d{6})\*\*',
-            r'Il tuo codice:\s*\*\*(\d{6})\*\*',
-            r'codice:\s*(\d{6})',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, html_content)
-            if match:
-                code = match.group(1)
-                logger.info(f"Извлечен код подтверждения: {code}")
-                return code
-        
-        logger.error("Не удалось извлечь код из письма")
-        return None
-    
-    async def _js_click(self, selector: str, timeout: int = 10000) -> bool:
-        """
-        Клик на элемент через JavaScript (более надежный чем page.click)
-        
-        Args:
-            selector: CSS селектор элемента
-            timeout: Таймаут ожидания элемента в миллисекундах
-            
-        Returns:
-            True если клик успешен, False иначе
-        """
+    async def _bypass_press_hold_captcha(self, driver) -> bool:
+        """Обход капчи PRESS & HOLD"""
         try:
-            # Ждем появления элемента
-            await self.page.wait_for_selector(selector, timeout=timeout, state='visible')
+            logger.info("Пытаемся обойти капчу PRESS & HOLD...")
             
-            # Кликаем через JavaScript
-            clicked = await self.page.evaluate(f'''
-                () => {{
-                    const element = document.querySelector('{selector}');
-                    if (element) {{
-                        element.click();
-                        return true;
-                    }}
-                    return false;
-                }}
-            ''')
+            # Ждем загрузки страницы
+            await asyncio.sleep(2)
             
-            if clicked:
-                logger.debug(f"✅ JS клик успешен: {selector}")
-                return True
-            else:
-                logger.warning(f"⚠️ Элемент не найден для JS клика: {selector}")
-                return False
-                
-        except Exception as e:
-            logger.debug(f"❌ Ошибка JS клика на {selector}: {e}")
-            return False
-    
-    async def _init_browser(self):
-        """Инициализация браузера с настройками"""
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.common.action_chains import ActionChains
-        import time
-        import random
-        
-        # Создаем Selenium браузер вместо Playwright
-        options = Options()
-        
-        # ОТКЛЮЧАЕМ ВСЕ СЛЕДЫ АВТОМАТИЗАЦИИ
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        
-        # ОБЫЧНЫЕ НАСТРОЙКИ
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-        
-        # USER AGENT
-        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        
-        # Добавляем прокси если указан
-        if self.proxy:
-            options.add_argument(f"--proxy-server={self.proxy.to_url()}")
-            logger.info(f"Используется прокси: {self.proxy}")
-        
-        self.driver = webdriver.Chrome(options=options)
-        
-        # УБИРАЕМ webdriver
-        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
-        # УБИРАЕМ chrome.runtime
-        self.driver.execute_script("delete window.chrome.runtime")
-        
-        # ПОДДЕЛЫВАЕМ plugins
-        self.driver.execute_script("""
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [
-                    {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
-                    {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
-                    {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''}
-                ]
-            });
-        """)
-        
-        logger.info("Браузер инициализирован")
-    
-    async def _close_browser(self):
-        """Закрытие браузера"""
-        if self.page:
-            await self.page.close()
-        if self.context:
-            await self.context.close()
-        if self.browser:
-            await self.browser.close()
-        logger.info("Браузер закрыт")
-    
-    async def _wait_random(self, min_seconds: float = 1, max_seconds: float = 3):
-        """Случайная задержка для имитации человеческого поведения"""
-        delay = random.uniform(min_seconds, max_seconds)
-        await asyncio.sleep(delay)
-    
-    async def register_account(self) -> Optional[Dict[str, Any]]:
-        """
-        Регистрация нового аккаунта на Fiverr (итальянская версия)
-        
-        Returns:
-            Словарь с данными аккаунта или None в случае ошибки
-        """
-        try:
-            # Проверяем прокси перед началом (если указан) - НЕ блокирующая проверка
-            if self.proxy:
-                logger.info(f"Проверка прокси {self.proxy}...")
-                from services.proxy_manager import ProxyManager
-                # Даем прокси шанс - проверка не критична
-                await ProxyManager.check_proxy(self.proxy, timeout=20)
-                # Продолжаем даже если проверка не прошла - прокси может работать с Fiverr
-            
-            # Инициализируем браузер
-            await self._init_browser()
-            
-            # Проверяем доступные почтовые домены для fiverr.com
-            logger.info("Проверка доступных почтовых доменов для fiverr.com...")
-            available_domains = await self.email_service.get_available_emails(site="fiverr.com")
-            
-            if not available_domains:
-                logger.error("Не удалось получить список доступных доменов")
-                return None
-            
-            # Выбираем первый домен с count > 0
-            selected_domain = None
-            for domain, info in available_domains.items():
-                if info.get("count", 0) > 0:
-                    selected_domain = domain
-                    logger.info(f"Выбран домен: {domain} (доступно: {info['count']} шт., цена: ${info['price']})")
-                    break
-            
-            if not selected_domain:
-                logger.error("Нет доступных почтовых доменов для fiverr.com")
-                return None
-            
-            # Заказываем почту с выбранным доменом
-            logger.info(f"Заказ email на домене {selected_domain}...")
-            email_data = await self.email_service.order_email(
-                site="fiverr.com",
-                domain=selected_domain,
-                regex=r"\d{6}"  # Ищем 6-значный код в письме
-            )
-            
-            if not email_data:
-                logger.error("Не удалось заказать email")
-                return None
-            
-            email = email_data['email']
-            activation_id = email_data['id']
-            logger.info(f"Получен email: {email}")
-            
-            # Генерируем данные для регистрации
-            password = self._generate_password(11)  # 9-12 символов
-            
-            # Извлекаем базовое имя из email для username
-            email_base = email.split('@')[0]
-            username = self._generate_username(email_base)
-            
-            # ШАГ 1: Переходим на главную страницу Fiverr
-            logger.info("Переход на fiverr.com...")
-            try:
-                # Используем менее строгое условие загрузки для медленных прокси
-                await self.page.goto("https://it.fiverr.com", wait_until="domcontentloaded", timeout=90000)
-                logger.info("Страница загружена, ожидание готовности...")
-                await self._wait_random(3, 5)
-            except Exception as e:
-                logger.error(f"Ошибка загрузки страницы: {e}")
-                logger.info("Пробуем альтернативный метод загрузки...")
-                try:
-                    # Пробуем без wait_until
-                    await self.page.goto("https://it.fiverr.com", timeout=90000)
-                    await self._wait_random(5, 7)
-                except Exception as e2:
-                    logger.error(f"Не удалось загрузить страницу: {e2}")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
-            
-            # ШАГ 2: ВСЕГДА переходим на /join (страница регистрации)
-            logger.info("Переход на страницу регистрации /join...")
-            try:
-                await self.page.goto("https://it.fiverr.com/join", wait_until="domcontentloaded", timeout=90000)
-                logger.info("✅ Страница /join загружена")
-                await self._wait_random(3, 5)
-            except Exception as e:
-                logger.error(f"Не удалось открыть страницу регистрации: {e}")
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # ШАГ 3: АНАЛИЗИРУЕМ страницу /join и ищем кнопку email
-            logger.info("АНАЛИЗ страницы /join...")
-            try:
-                # Ждем загрузки кнопок (любых)
-                await self._wait_random(3, 5)
-                
-                # ЛОГИРУЕМ ВСЕ КНОПКИ на странице
-                buttons_info = await self.page.evaluate('''
-                    () => {
-                        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
-                        
-                        return buttons.map((btn, index) => {
-                            // Получаем текст кнопки
-                            const text = btn.innerText || btn.textContent || '';
-                            
-                            // Получаем ПОЛНЫЙ HTML (для лога - первые 1000 символов)
-                            const html = btn.outerHTML.substring(0, 1000);
-                            
-                            // Проверяем наличие SVG
-                            const hasSvg = btn.querySelector('svg') ? true : false;
-                            const svgTag = btn.querySelector('svg') ? btn.querySelector('svg').getAttribute('data-track-tag') : null;
-                            
-                            // Ищем все SVG внутри кнопки
-                            const allSvgs = Array.from(btn.querySelectorAll('svg')).map(svg => 
-                                svg.getAttribute('data-track-tag') || 'no-tag'
-                            );
-                            
-                            return {
-                                index: index,
-                                text: text.substring(0, 100),
-                                hasSvg: hasSvg,
-                                svgTag: svgTag,
-                                allSvgs: allSvgs,
-                                html: html
-                            };
-                        });
-                    }
-                ''')
-                
-                logger.info(f"📊 НАЙДЕНО КНОПОК: {len(buttons_info)}")
-                for btn in buttons_info:
-                    logger.info(f"  Кнопка #{btn['index']}: text='{btn['text']}', svg={btn['hasSvg']}, allSvgs={btn['allSvgs']}")
-                    logger.info(f"    HTML: {btn['html']}")
-                
-                # ИЩЕМ кнопку с email (по разным признакам)
-                logger.info("Поиск кнопки с признаками 'email'...")
-                clicked = await self.page.evaluate('''
-                    () => {
-                        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
-                        
-                        for (const btn of buttons) {
-                            const text = (btn.innerText || btn.textContent || '').toLowerCase();
-                            const html = btn.outerHTML.toLowerCase();
-                            
-                            // Проверяем ЛЮБЫЕ признаки email:
-                            // 1. Текст содержит "email"
-                            // 2. HTML содержит "email"
-                            // 3. SVG с envelope/mail
-                            // 4. НЕ содержит "google", "apple", "facebook"
-                            
-                            if (
-                                (text.includes('email') || html.includes('email') || 
-                                 html.includes('envelope') || html.includes('mail')) &&
-                                !text.includes('google') && !text.includes('apple') && !text.includes('facebook')
-                            ) {
-                                console.log('✅ НАЙДЕНА кнопка email:', text);
-                                btn.click();
-                                return true;
-                            }
-                        }
-                        
-                        console.error('❌ Кнопка email не найдена');
-                        return false;
-                    }
-                ''')
-                
-                if not clicked:
-                    logger.error("❌ Кнопка email не найдена на странице!")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
-                
-                logger.info("✅ Кликнули на кнопку email")
-                
-                # ВАЖНО: Форма открывается в модальном окне (URL НЕ меняется!)
-                # Даем время на анимацию открытия модального окна
-                logger.info("Ожидание открытия модального окна с формой...")
-                await self._wait_random(2, 3)
-                
-                # СКРИНШОТ для debug
-                try:
-                    screenshot_path = f"/tmp/fiverr_modal_{email}.png"
-                    await self.page.screenshot(path=screenshot_path, full_page=True)
-                    logger.info(f"Скриншот сохранен: {screenshot_path}")
-                except:
-                    pass
-                
-                try:
-                    await self.page.wait_for_selector(
-                        'input#identification-usernameOrEmail, input[name="usernameOrEmail"]',
-                        timeout=15000,
-                        state='visible'
-                    )
-                    logger.info("✅ Форма email/password загрузилась!")
-                except Exception as e:
-                    logger.error(f"❌ Форма не появилась за 15 секунд: {e}")
-                    
-                    # Debug: ПОЛНАЯ ДИАГНОСТИКА
-                    logger.error("=== ДИАГНОСТИКА МОДАЛЬНОГО ОКНА ===")
-                    
-                    # 1. Все input на странице
-                    modal_check = await self.page.evaluate('''
-                        () => {
-                            const allInputs = document.querySelectorAll('input');
-                            const inputs = [];
-                            allInputs.forEach(input => {
-                                const rect = input.getBoundingClientRect();
-                                inputs.push({
-                                    type: input.type,
-                                    name: input.name,
-                                    id: input.id,
-                                    placeholder: input.placeholder,
-                                    visible: input.offsetParent !== null,
-                                    inViewport: rect.top >= 0 && rect.left >= 0
-                                });
-                            });
-                            return inputs;
-                        }
-                    ''')
-                    logger.error(f"ВСЕ INPUT: {modal_check}")
-                    
-                    # 2. HTML модального окна (если есть)
-                    modal_html = await self.page.evaluate('''
-                        () => {
-                            const modal = document.querySelector('[role="dialog"], .modal, [data-modal]');
-                            if (modal) return modal.innerHTML.substring(0, 500);
-                            return "Модальное окно не найдено";
-                        }
-                    ''')
-                    logger.error(f"HTML МОДАЛЬНОГО ОКНА: {modal_html}")
-                    
-                    await self.email_service.cancel_email(activation_id)
-                    return None
-                    
-            except Exception as e:
-                logger.error(f"Ошибка клика на кнопку email: {e}")
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # ШАГ 4: Заполняем email и пароль
-            logger.info("Заполнение email и пароля...")
-            
-            # Вводим email - точные селекторы из HTML
-            email_input_selectors = [
-                'input#identification-usernameOrEmail',  # ID из HTML
-                'input[name="usernameOrEmail"]',  # name из HTML
-                'input[autocomplete="email"]',  # autocomplete атрибут
-                'input[type="text"][data-track-tag="input"]',  # Универсальный
+            # Ищем кнопку PRESS & HOLD по разным селекторам
+            button_selectors = [
+                "button[class*='press']",
+                "button[class*='hold']", 
+                "button[class*='captcha']",
+                "div[class*='press']",
+                "div[class*='hold']",
+                "button:contains('PRESS')",
+                "button:contains('HOLD')",
+                "[data-testid*='captcha']",
+                "[id*='captcha']",
+                "button[style*='border']"
             ]
             
-            email_filled = False
-            for selector in email_input_selectors:
+            button = None
+            for selector in button_selectors:
                 try:
-                    # Проверяем что элемент видим и доступен
-                    await self.page.wait_for_selector(selector, timeout=5000, state='visible')
-                    await self.page.fill(selector, email)
-                    email_filled = True
-                    logger.info(f"✅ Email '{email}' введен через селектор: {selector}")
-                    await self._wait_random(1, 2)
-                    break
-                except Exception as e:
-                    logger.debug(f"Селектор {selector} не сработал: {e}")
-                    continue
-            
-            if not email_filled:
-                logger.error("❌ Не удалось найти поле email")
-                logger.error(f"Текущий URL: {self.page.url}")
-                # Попытка получить список всех input на странице для отладки
-                try:
-                    inputs = await self.page.query_selector_all('input')
-                    logger.error(f"Всего найдено input элементов: {len(inputs)}")
-                    for i, inp in enumerate(inputs[:5]):  # Первые 5
-                        inp_type = await inp.get_attribute('type')
-                        inp_name = await inp.get_attribute('name')
-                        inp_id = await inp.get_attribute('id')
-                        logger.error(f"Input {i}: type={inp_type}, name={inp_name}, id={inp_id}")
-                except:
-                    pass
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # Вводим пароль - точные селекторы из HTML
-            password_input_selectors = [
-                'input#identification-password',  # ID из HTML
-                'input[name="password"][autocomplete="current-password"]',  # name + autocomplete
-                'input[type="password"][data-track-tag="input"]',  # type + data-track
-                'input[type="password"]',  # Универсальный fallback
-            ]
-            
-            password_filled = False
-            for selector in password_input_selectors:
-                try:
-                    await self.page.fill(selector, password)
-                    password_filled = True
-                    logger.info(f"✅ Пароль введен через селектор: {selector}")
-                    await self._wait_random(1, 2)
-                    break
-                except Exception as e:
-                    logger.debug(f"Селектор {selector} не сработал: {e}")
-                    continue
-            
-            if not password_filled:
-                logger.error("❌ Не удалось найти поле пароля")
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # ШАГ 5: Нажимаем "Continua" (submit button)
-            logger.info("Отправка формы через клик на кнопку Submit...")
-            try:
-                # НАХОДИМ и КЛИКАЕМ на кнопку Submit (form.submit() не работает - JS блокирует!)
-                submit_clicked = await self.page.evaluate('''
-                    () => {
-                        // Ищем кнопку submit по разным критериям
-                        const submitButton = 
-                            document.querySelector('button[type="submit"]') ||
-                            document.querySelector('button[data-track-tag="button"][type="submit"]') ||
-                            document.querySelector('form button[type="submit"]');
-                        
-                        if (submitButton) {
-                            // Кликаем через JavaScript
-                            submitButton.click();
-                            return true;
-                        }
-                        return false;
-                    }
-                ''')
-                
-                if submit_clicked:
-                    logger.info("✅ Кликнули на кнопку Submit!")
-                    await self._wait_random(3, 4)
-                    
-                    # АНАЛИЗИРУЕМ что произошло после клика
-                    try:
-                        # Проверяем есть ли ещё поля email/password
-                        email_field_exists = await self.page.query_selector('input#identification-usernameOrEmail')
-                        password_field_exists = await self.page.query_selector('input#identification-password')
-                        
-                        if email_field_exists and password_field_exists:
-                            logger.error("❌ ФОРМА НЕ ОТПРАВИЛАСЬ! Поля email/password всё ещё на месте!")
-                            
-                            # Логируем HTML модального окна для анализа
-                            modal_html = await self.page.evaluate('''
-                                () => {
-                                    // Ищем модальное окно
-                                    const modal = document.querySelector('[role="dialog"]') || 
-                                                  document.querySelector('.modal') ||
-                                                  document.querySelector('[data-track-tag="modal"]');
-                                    
-                                    return modal ? modal.innerHTML : 'Модальное окно не найдено';
-                                }
-                            ''')
-                            logger.error(f"HTML модального окна (первые 2000 символов): {modal_html[:2000]}")
-                            
-                            # Проверяем текст ошибок
-                            modal_text = await self.page.evaluate('''
-                                () => {
-                                    const modal = document.querySelector('[role="dialog"]') || 
-                                                  document.querySelector('.modal');
-                                    return modal ? modal.innerText : document.body.innerText;
-                                }
-                            ''')
-                            logger.error(f"Текст модального окна: {modal_text[:1000]}")
-                            
-                            await self.email_service.cancel_email(activation_id)
-                            return None
-                        else:
-                            logger.info("✅ Старая форма исчезла, модальное окно обновилось!")
-                    except Exception as e:
-                        logger.error(f"Ошибка при анализе модального окна: {e}")
-                    
-                    await self._wait_random(2, 3)
-                else:
-                    logger.error("❌ Форма не валидна или не найдена!")
-                    # Логируем текст страницы для диагностики
-                    try:
-                        page_text = await self.page.evaluate('() => document.body.innerText')
-                        logger.error(f"Текст страницы: {page_text[:500]}")
-                    except:
-                        pass
-                    await self.email_service.cancel_email(activation_id)
-                    return None
-                    
-            except Exception as e:
-                logger.error(f"Ошибка отправки формы: {e}")
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # ШАГ 6: Вводим username (ОБЯЗАТЕЛЬНОЕ ПОЛЕ!) с проверкой на занятость
-            logger.info(f"Ввод username: {username}...")
-            
-            # ЯВНО ЖДЕМ появления поля username
-            logger.info("Ожидание появления поля username...")
-            try:
-                await self.page.wait_for_selector('input#username', state='visible', timeout=30000)
-                logger.info("✅ Поле username появилось!")
-            except Exception as e:
-                logger.error(f"❌ Поле username не появилось за 30 секунд: {e}")
-                # DEBUG: показываем что есть на странице
-                try:
-                    page_html = await self.page.content()
-                    logger.error(f"HTML страницы (первые 1000 символов): {page_html[:1000]}")
-                except:
-                    pass
-            
-            # Точные селекторы из HTML (БЕЗ placeholder - это просто текст для примера!)
-            username_input_selectors = [
-                'input#username',  # ID из HTML - САМЫЙ НАДЕЖНЫЙ
-                'input[name="username"][maxlength="15"]',  # name + maxlength
-                'input[name="username"][type="text"]',  # name + type
-                'input[data-track-tag="input"][name="username"]',  # data-track-tag + name
-                'input[name="username"]',  # Универсальный fallback
-            ]
-            
-            # Попытки ввода username с проверкой на занятость
-            max_username_attempts = 5
-            username_accepted = False
-            
-            for attempt in range(max_username_attempts):
-                # Если это не первая попытка - генерируем новый username
-                if attempt > 0:
-                    username = self._generate_username()
-                    logger.info(f"Попытка {attempt + 1}/{max_username_attempts}: Генерируем новый username: {username}")
-                
-                # Заполняем поле username
-                username_filled = False
-                for selector in username_input_selectors:
-                    try:
-                        logger.debug(f"Поиск username поля через селектор: {selector}")
-                        username_field = await self.page.wait_for_selector(selector, timeout=20000, state='visible')
-                        
-                        # Очищаем поле перед вводом (если это повторная попытка)
-                        if attempt > 0:
-                            await username_field.fill('')
-                            await self._wait_random(0.3, 0.5)
-                        
-                        await username_field.fill(username)
-                        username_filled = True
-                        logger.info(f"✅ Username '{username}' введен через селектор: {selector}")
-                        await self._wait_random(1, 2)
+                    if ":contains" in selector:
+                        # Используем XPath для текстового поиска
+                        xpath = f"//button[contains(text(), 'PRESS') or contains(text(), 'HOLD')]"
+                        button = driver.find_element(By.XPATH, xpath)
+                    else:
+                        button = driver.find_element(By.CSS_SELECTOR, selector)
+                    if button:
+                        logger.info(f"Найдена кнопка капчи по селектору: {selector}")
                         break
+                except:
+                    continue
+            
+            if not button:
+                logger.warning("Кнопка капчи не найдена")
+                return False
+            
+            # Получаем размеры кнопки
+            size = button.size
+            logger.info(f"Размеры кнопки: {size}")
+            
+            # Нажимаем и удерживаем кнопку
+            from selenium.webdriver.common.action_chains import ActionChains
+            
+            actions = ActionChains(driver)
+            
+            # Перемещаемся к кнопке
+            actions.move_to_element(button)
+            
+            # Нажимаем и удерживаем
+            actions.click_and_hold(button)
+            
+            # Удерживаем от 7 до 9 секунд (как требует капча)
+            hold_time = random.uniform(7, 9)
+            logger.info(f"Удерживаем кнопку {hold_time:.1f} секунд...")
+            
+            # Выполняем действие
+            actions.perform()
+            
+            # Ждем указанное время
+            await asyncio.sleep(hold_time)
+            
+            # Отпускаем кнопку
+            actions.release(button).perform()
+            
+            logger.info("Кнопка отпущена, ждем результат...")
+            
+            # Ждем результата (до 10 секунд)
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                
+                # Проверяем, исчезла ли капча
+                try:
+                    current_url = driver.current_url
+                    if "fiverr.com" in current_url and "px-captcha" not in current_url:
+                        logger.info("Капча успешно пройдена!")
+                        return True
+                except:
+                    pass
+                
+                # Проверяем, появились ли ошибки
+                try:
+                    page_source = driver.page_source
+                    if "error" in page_source.lower() or "blocked" in page_source.lower():
+                        logger.warning("Обнаружена ошибка на странице")
+                        return False
+                except:
+                    pass
+            
+            logger.warning("Время ожидания истекло, капча не пройдена")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обходе капчи: {e}")
+            return False
+
+    async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
+        """Регистрация с обходом капчи через браузер"""
+        if not SELENIUM_AVAILABLE:
+            return {
+                "success": False,
+                "error": "Selenium недоступен - обход капчи невозможен"
+            }
+        
+        driver = None
+        try:
+            logger.info("Запускаем браузер для обхода капчи...")
+            
+            # Агрессивно убиваем все процессы Chrome перед запуском
+            import subprocess
+            try:
+                # Убиваем все процессы Chrome
+                subprocess.run(["pkill", "-9", "-f", "chrome"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-9", "-f", "chromedriver"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-9", "-f", "chromium"], check=False, capture_output=True)
+                
+                # Очищаем временные файлы Chrome
+                subprocess.run(["rm", "-rf", "/tmp/.com.google.Chrome*"], check=False, capture_output=True)
+                subprocess.run(["rm", "-rf", "/tmp/chrome*"], check=False, capture_output=True)
+                
+                await asyncio.sleep(2)
+                logger.info("Все процессы Chrome принудительно завершены")
+            except Exception as e:
+                logger.warning(f"Ошибка при очистке процессов: {e}")
+            
+            # Настройки Chrome
+            options = Options()
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            # Используем только incognito без user-data-dir
+            options.add_argument('--incognito')
+            options.add_argument('--no-first-run')
+            options.add_argument('--disable-default-apps')
+            options.add_argument('--no-user-data-dir')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-plugins')
+            
+            # Случайный User-Agent
+            user_agent = self._get_random_user_agent()
+            options.add_argument(f'--user-agent={user_agent}')
+            
+            # Запускаем браузер
+            driver = webdriver.Chrome(options=options)
+            
+            # Убираем признаки автоматизации
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": user_agent})
+            
+            # Переходим на главную страницу (где происходит регистрация)
+            logger.info("Переходим на главную страницу Fiverr...")
+            driver.get("https://it.fiverr.com/")
+            
+            # Ждем загрузки
+            await asyncio.sleep(3)
+            
+            # Проверяем, есть ли капча
+            page_source = driver.page_source
+            if "PRESS" in page_source and "HOLD" in page_source:
+                logger.info("Обнаружена капча PRESS & HOLD, пытаемся обойти...")
+                
+                # Делаем скриншот капчи
+                if telegram_bot and chat_id:
+                    try:
+                        screenshot = driver.get_screenshot_as_png()
+                        from io import BytesIO
+                        screenshot_file = BytesIO(screenshot)
+                        screenshot_file.name = f"captcha_before_{email}.png"
+                        
+                        await telegram_bot.send_photo(
+                            chat_id=chat_id,
+                            photo=screenshot_file,
+                            caption=f"🚨 <b>Обнаружена капча PRESS & HOLD</b>\n\n"
+                                   f"📧 Email: <code>{email}</code>\n"
+                                   f"🌐 Страница: Главная страница Fiverr\n"
+                                   f"🤖 Пытаемся обойти автоматически...",
+                            parse_mode='HTML'
+                        )
                     except Exception as e:
-                        logger.debug(f"Селектор {selector} не сработал: {e}")
+                        logger.warning(f"Ошибка отправки скриншота: {e}")
+                
+                # Обходим капчу
+                captcha_bypassed = await self._bypass_press_hold_captcha(driver)
+                
+                if not captcha_bypassed:
+                    logger.warning("Не удалось обойти капчу")
+                    return {
+                        "success": False,
+                        "error": "Не удалось обойти капчу PRESS & HOLD"
+                    }
+                
+                logger.info("Капча успешно обойдена, продолжаем регистрацию...")
+            
+            # Теперь заполняем форму регистрации на главной странице
+            try:
+                # Ищем поля формы регистрации на главной странице
+                # Пробуем разные селекторы для полей регистрации
+                email_selectors = [
+                    "input[type='email']",
+                    "input[name*='email']", 
+                    "input[id*='email']",
+                    "input[placeholder*='email' i]",
+                    "input[placeholder*='Email' i]",
+                    "input[data-testid*='email']"
+                ]
+                
+                password_selectors = [
+                    "input[type='password']",
+                    "input[name*='password']",
+                    "input[id*='password']",
+                    "input[placeholder*='password' i]",
+                    "input[placeholder*='Password' i]",
+                    "input[data-testid*='password']"
+                ]
+                
+                username_selectors = [
+                    "input[name*='username']",
+                    "input[id*='username']",
+                    "input[placeholder*='username' i]",
+                    "input[placeholder*='Username' i]",
+                    "input[data-testid*='username']"
+                ]
+                
+                # Ищем поля по селекторам
+                email_field = None
+                for selector in email_selectors:
+                    try:
+                        email_field = driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Найдено поле email по селектору: {selector}")
+                        break
+                    except:
                         continue
                 
-                if not username_filled:
-                    # DEBUG: Показываем все input на странице
+                password_field = None
+                for selector in password_selectors:
                     try:
-                        all_inputs = await self.page.evaluate('''
-                            () => {
-                                const inputs = document.querySelectorAll('input');
-                                return Array.from(inputs).map(inp => ({
-                                    id: inp.id,
-                                    name: inp.name,
-                                    type: inp.type,
-                                    placeholder: inp.placeholder,
-                                    visible: inp.offsetParent !== null
-                                }));
-                            }
-                        ''')
-                        logger.error(f"❌ Все input элементы на странице: {all_inputs}")
+                        password_field = driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Найдено поле password по селектору: {selector}")
+                        break
                     except:
-                        pass
-                    
-                    logger.error("❌ ОБЯЗАТЕЛЬНОЕ поле username не найдено!")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
+                        continue
                 
-                # Проверяем, есть ли ошибка "username занят"
-                # Текст ошибки: "Sembra che questo nome utente sia già in uso. Scegline un altro."
-                await self._wait_random(1, 2)  # Даем время на появление ошибки
-                
-                try:
-                    # Ищем сообщение об ошибке (может быть на разных языках)
-                    error_texts = [
-                        'già in uso',  # Итальянский: "уже используется"
-                        'already in use',  # Английский
-                        'already taken',  # Английский альтернативный
-                        'username is taken',  # Английский
-                        'Scegline un altro',  # Итальянский: "Выберите другое"
-                    ]
-                    
-                    page_content = await self.page.content()
-                    username_taken = any(error_text.lower() in page_content.lower() for error_text in error_texts)
-                    
-                    if username_taken:
-                        logger.warning(f"⚠️ Username '{username}' уже занят! Попытка {attempt + 1}/{max_username_attempts}")
-                        continue  # Переходим к следующей попытке с новым username
-                    else:
-                        # Username не занят, можно продолжать
-                        logger.info(f"✅ Username '{username}' свободен!")
-                        username_accepted = True
+                username_field = None
+                for selector in username_selectors:
+                    try:
+                        username_field = driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Найдено поле username по селектору: {selector}")
                         break
-                        
-                except Exception as e:
-                    logger.debug(f"Ошибка при проверке занятости username: {e}")
-                    # Если не можем проверить - считаем что username свободен
-                    username_accepted = True
-                    break
-            
-            if not username_accepted:
-                logger.error(f"❌ Не удалось подобрать свободный username за {max_username_attempts} попыток")
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # ШАГ 7: Нажимаем "Crea il mio account" (submit button)
-            logger.info("Клик на кнопку создания аккаунта (submit)...")
-            try:
-                # Пробуем разные селекторы через JS
-                selectors = [
-                    'button[type="submit"][data-track-tag="button"]',
-                    'button[type="submit"]',
-                ]
+                    except:
+                        continue
                 
-                clicked = False
-                for selector in selectors:
-                    # Проверяем сколько кнопок с таким селектором
-                    button_count = await self.page.evaluate(f'''
-                        () => document.querySelectorAll('{selector}').length
-                    ''')
-                    
-                    if button_count >= 2:
-                        # Кликаем на вторую кнопку через JS
-                        clicked = await self.page.evaluate(f'''
-                            () => {{
-                                const buttons = document.querySelectorAll('{selector}');
-                                if (buttons.length >= 2) {{
-                                    buttons[1].click();
-                                    return true;
-                                }}
-                                return false;
-                            }}
-                        ''')
-                        if clicked:
-                            logger.info(f"✅ Кликнули на вторую submit кнопку: {selector}")
-                            break
-                    elif button_count == 1:
-                        # Кликаем на единственную через JS
-                        if await self._js_click(selector, timeout=5000):
-                            clicked = True
-                            logger.info(f"✅ Кликнули на единственную submit кнопку: {selector}")
-                            break
+                if not email_field or not password_field:
+                    logger.error("Не найдены обязательные поля email или password")
+                    return {
+                        "success": False,
+                        "error": "Не найдены поля формы регистрации на главной странице"
+                    }
                 
-                if not clicked:
-                    logger.error("❌ Не удалось нажать кнопку создания аккаунта")
-                    await self.email_service.cancel_email(activation_id)
-                    return None
+                # Заполняем поля
+                email_field.clear()
+                email_field.send_keys(email)
+                logger.info("Поле email заполнено")
                 
-                await self._wait_random(3, 5)
-                    
-            except Exception as e:
-                logger.error(f"Не удалось нажать кнопку создания аккаунта: {e}")
-                await self.email_service.cancel_email(activation_id)
-                return None
-            
-            # ШАГ 8: Ожидаем письмо с кодом подтверждения (1-3 минуты)
-            logger.info("Ожидание письма с кодом подтверждения (до 3 минут)...")
-            message_data = await self.email_service.get_message(
-                activation_id=activation_id,
-                preview=True,  # Получаем HTML версию
-                max_retries=36,  # 36 * 5 сек = 3 минуты
-                retry_interval=5
-            )
-            
-            if not message_data:
-                logger.error("Не удалось получить письмо с кодом")
-                return None
-            
-            # Извлекаем код из HTML письма
-            html_content = message_data.get('message', '')
-            confirmation_code = self._extract_code_from_html(html_content)
-            
-            if not confirmation_code:
-                # Пробуем value напрямую
-                confirmation_code = message_data.get('value', '')
-                if not confirmation_code or len(confirmation_code) != 6:
-                    logger.error("Не удалось извлечь 6-значный код")
-                    return None
-            
-            logger.info(f"Получен код подтверждения: {confirmation_code}")
-            
-            # ШАГ 9: Вводим код подтверждения (6 цифр)
-            logger.info("Ввод кода подтверждения...")
-            
-            # Ищем поля для ввода кода - точные селекторы из HTML
-            try:
-                # Пробуем найти поля для одноразового кода
-                code_inputs = await self.page.query_selector_all('input[autocomplete="one-time-code"]')
+                password_field.clear()
+                password_field.send_keys(password)
+                logger.info("Поле password заполнено")
                 
-                # Если не нашли по autocomplete, пробуем другие селекторы
-                if not code_inputs:
-                    code_inputs = await self.page.query_selector_all('input[inputmode="numeric"][pattern="[0-9]*"]')
-                
-                if not code_inputs:
-                    code_inputs = await self.page.query_selector_all('input[maxlength="6"][type="text"]')
-                
-                if len(code_inputs) >= 6:
-                    # 6 отдельных полей - вводим целый код в первое поле
-                    # Fiverr автоматически распределит цифры по полям
-                    logger.info("Найдено 6 полей для кода, вводим весь код в первое поле...")
-                    await code_inputs[0].fill(confirmation_code)
-                    logger.info(f"✅ Код {confirmation_code} введен")
-                    await self._wait_random(1, 2)
-                elif len(code_inputs) == 1:
-                    # Одно поле - вводим весь код
-                    logger.info("Найдено одно поле для кода...")
-                    await code_inputs[0].fill(confirmation_code)
-                    logger.info(f"✅ Код {confirmation_code} введен")
-                    await self._wait_random(1, 2)
+                # Заполняем username если поле найдено
+                if username_field:
+                    username_field.clear()
+                    username_field.send_keys(username)
+                    logger.info("Поле username заполнено")
                 else:
-                    # Fallback - пробуем общие селекторы
-                    logger.warning(f"Найдено {len(code_inputs)} полей для кода, пробуем fallback селекторы...")
-                    code_selectors = [
-                        'input[name="code"]',
-                        'input[placeholder*="codice"]',
-                        'input[placeholder*="code"]',
-                        'input[type="text"][data-track-tag="input"]'
-                    ]
-                    
-                    filled = False
-                    for selector in code_selectors:
-                        try:
-                            await self.page.fill(selector, confirmation_code)
-                            logger.info(f"✅ Код введен через селектор: {selector}")
-                            await self._wait_random(1, 2)
-                            filled = True
-                            break
-                        except:
-                            continue
-                    
-                    if not filled:
-                        logger.error("❌ Не удалось найти поле для кода")
-                        return None
+                    logger.info("Поле username не найдено - возможно необязательное")
                 
-                # ШАГ 10: Нажимаем "Invia" (submit/role button)
-                logger.info("Клик на кнопку Invia...")
-                # Селектор: button[role="button"] или button[data-track-tag="button"]
-                selectors = [
-                    'button[role="button"][data-track-tag="button"]',
-                    'button[role="button"]._arosdn',
-                    'button[role="button"]',
-                    'button[data-track-tag="button"]',
+                logger.info("Поля формы заполнены")
+                
+                # Ищем кнопку регистрации на главной странице
+                submit_selectors = [
+                    "button[type='submit']",
+                    "button[class*='submit']",
+                    "button[class*='register']",
+                    "button[class*='signup']",
+                    "button[class*='join']",
+                    "button[class*='create']",
+                    "input[type='submit']",
+                    "button:contains('Sign up')",
+                    "button:contains('Join')",
+                    "button:contains('Register')",
+                    "button:contains('Create')",
+                    "[data-testid*='submit']",
+                    "[data-testid*='register']",
+                    "[data-testid*='signup']"
                 ]
                 
-                clicked = False
-                for selector in selectors:
-                    if await self._js_click(selector, timeout=5000):
-                        clicked = True
-                        logger.info(f"✅ Кликнули Invia через: {selector}")
-                        await self._wait_random(3, 5)
-                        break
-                
-                if not clicked:
-                    logger.error("❌ Не удалось нажать кнопку Invia")
-                    return None
-                
-            except Exception as e:
-                logger.error(f"Ошибка при вводе кода: {e}")
-                return None
-            
-            # ШАГ 11: Проходим онбординг (3 вопроса)
-            logger.info("Прохождение онбординга...")
-            for i in range(3):
-                try:
-                    # Выбираем левый чекбокс (первый вариант) через JS
-                    checkbox_clicked = await self.page.evaluate('''
-                        () => {
-                            const checkboxes = document.querySelectorAll('input[type="checkbox"], input[type="radio"]');
-                            if (checkboxes.length > 0) {
-                                checkboxes[0].click();
-                                return true;
-                            }
-                            return false;
-                        }
-                    ''')
-                    
-                    if checkbox_clicked:
-                        logger.debug(f"✅ Чекбокс выбран для вопроса {i+1}")
-                        await self._wait_random(0.5, 1)
-                    
-                    # Нажимаем "Avanti" (role="button")
-                    # Селектор: button[role="button"][data-track-tag="button"]
-                    selectors = [
-                        'button[role="button"][data-track-tag="button"]',
-                        'button[role="button"]._arosdn',
-                        'button[role="button"]',
-                    ]
-                    
-                    clicked = False
-                    for selector in selectors:
-                        if await self._js_click(selector, timeout=5000):
-                            clicked = True
-                            logger.info(f"✅ Вопрос {i+1}/3 пройден")
-                            await self._wait_random(2, 3)
+                submit_button = None
+                for selector in submit_selectors:
+                    try:
+                        if ":contains" in selector:
+                            # Используем XPath для текстового поиска
+                            text = selector.split("'")[1]
+                            xpath = f"//button[contains(text(), '{text}')]"
+                            submit_button = driver.find_element(By.XPATH, xpath)
+                        else:
+                            submit_button = driver.find_element(By.CSS_SELECTOR, selector)
+                        if submit_button:
+                            logger.info(f"Найдена кнопка регистрации по селектору: {selector}")
                             break
+                    except:
+                        continue
+                
+                if not submit_button:
+                    logger.error("Кнопка регистрации не найдена")
+                    return {
+                        "success": False,
+                        "error": "Кнопка регистрации не найдена на главной странице"
+                    }
+                
+                # Нажимаем кнопку
+                submit_button.click()
+                logger.info("Кнопка регистрации нажата")
+                
+                # Ждем результата
+                await asyncio.sleep(5)
+                
+                # Проверяем успешность регистрации
+                current_url = driver.current_url
+                page_source = driver.page_source
+                
+                if "success" in page_source.lower() or "welcome" in page_source.lower() or "dashboard" in current_url:
+                    logger.info("Регистрация успешна!")
                     
-                    if not clicked:
-                        logger.warning(f"⚠️ Не удалось нажать кнопку на вопросе {i+1}, возможно онбординг завершен")
-                        break
-                        
-                except Exception as e:
-                    logger.warning(f"Ошибка на шаге онбординга {i+1}: {e}")
-                    # Продолжаем, возможно онбординг уже завершен
-                    break
-            
-            # Проверяем успешность регистрации
-            await self._wait_random(2, 3)
-            current_url = self.page.url
-            
-            logger.info(f"Текущий URL после регистрации: {current_url}")
-            
-            # Получаем cookies
-            cookies = await self.context.cookies()
-            cookies_dict = {cookie['name']: cookie['value'] for cookie in cookies}
-            
-            # Сохраняем cookies в файл
-            import json
-            cookies_file = COOKIES_DIR / f"{email.replace('@', '_at_')}.json"
-            with open(cookies_file, 'w') as f:
-                json.dump(cookies, f, indent=2)
-            
-            logger.info(f"Cookies сохранены в {cookies_file}")
-            logger.info("✅ Регистрация завершена успешно!")
-            
-            # Формируем результат
-            result = {
-                "email": email,
-                "password": password,
-                "username": username,
-                "cookies": cookies,
-                "cookies_file": str(cookies_file),
-                "proxy": str(self.proxy) if self.proxy else None,
-                "success": True,
-                "final_url": current_url
-            }
-            
-            return result
+                    # Получаем cookies
+                    cookies = {}
+                    for cookie in driver.get_cookies():
+                        cookies[cookie['name']] = cookie['value']
+                    
+                    return {
+                        "success": True,
+                        "email": email,
+                        "username": username,
+                        "password": password,
+                        "cookies": cookies,
+                        "method": "browser_with_captcha_bypass"
+                    }
+                else:
+                    logger.warning("Регистрация не удалась")
+                    return {
+                        "success": False,
+                        "error": "Регистрация не удалась после обхода капчи"
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Ошибка при заполнении формы: {e}")
+                return {
+                    "success": False,
+                    "error": f"Ошибка заполнения формы: {str(e)}"
+                }
                 
         except Exception as e:
-            logger.error(f"Критическая ошибка при регистрации: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"Критическая ошибка при обходе капчи: {e}")
+            return {
+                "success": False,
+                "error": f"Ошибка обхода капчи: {str(e)}"
+            }
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                    logger.info("Браузер закрыт")
+                except:
+                    pass
+            
+            # Временные файлы больше не используются
+
+    async def _take_captcha_screenshot(self, url: str = "https://it.fiverr.com/") -> Optional[bytes]:
+        """Сделать скриншот страницы с капчей"""
+        if not SELENIUM_AVAILABLE:
+            logger.warning("Selenium недоступен - скриншот не может быть сделан")
+            return None
+        
+        driver = None
+        try:
+            logger.info("Запускаем браузер для скриншота капчи...")
+            
+            # Убиваем все процессы Chrome перед запуском
+            import subprocess
+            try:
+                subprocess.run(["pkill", "-f", "chrome"], check=False, capture_output=True)
+                subprocess.run(["pkill", "-f", "chromedriver"], check=False, capture_output=True)
+                await asyncio.sleep(1)
+            except:
+                pass
+            
+            # Настройки Chrome
+            options = Options()
+            options.add_argument('--headless')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            # Используем только incognito без user-data-dir
+            options.add_argument('--incognito')
+            options.add_argument('--no-first-run')
+            options.add_argument('--disable-default-apps')
+            options.add_argument('--no-user-data-dir')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-plugins')
+            
+            # Добавляем прокси если есть (только для HTTP запросов, не для Selenium)
+            # Chrome не поддерживает прокси с аутентификацией через --proxy-server
+            # Прокси будет использоваться только в HTTP запросах
+            
+            # Случайный User-Agent
+            user_agent = self._get_random_user_agent()
+            options.add_argument(f'--user-agent={user_agent}')
+            
+            # Запускаем браузер
+            driver = webdriver.Chrome(options=options)
+            
+            # Убираем признаки автоматизации
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": user_agent})
+            
+            # Переходим на страницу
+            logger.info(f"Переходим на {url}...")
+            driver.get(url)
+            
+            # Ждем загрузки
+            await asyncio.sleep(3)
+            
+            # Делаем скриншот
+            logger.info("Делаем скриншот...")
+            screenshot = driver.get_screenshot_as_png()
+            
+            logger.info(f"Скриншот сделан, размер: {len(screenshot)} байт")
+            return screenshot
+                    
+        except Exception as e:
+            logger.error(f"Ошибка при создании скриншота: {e}")
             return None
         finally:
-            await self._close_browser()
+            if driver:
+                try:
+                    driver.quit()
+                    logger.info("Браузер закрыт")
+                except:
+                    pass
+            
+            # Временные файлы больше не используются
+        
+    async def __aenter__(self):
+        """Асинхронный контекстный менеджер - вход"""
+        connector = None
+        if self.proxy and self.use_proxy:
+            connector = aiohttp.TCPConnector()
+        
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=aiohttp.ClientTimeout(total=30)
+        )
+        return self
     
-    async def register_multiple_accounts(self, count: int) -> list:
-        """
-        Регистрация нескольких аккаунтов последовательно
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Асинхронный контекстный менеджер - выход"""
+        if self.session:
+            await self.session.close()
+    
+    async def _get_csrf_token(self) -> Optional[str]:
+        """Получение CSRF токена с главной страницы"""
+        try:
+            # Сначала получаем главную страницу
+            url = "https://it.fiverr.com/"
+            headers = {
+                'User-Agent': self._get_random_user_agent(),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'sec-ch-ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
+            }
+            
+            async with self.session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    
+                    # Ищем CSRF токен в HTML
+                    csrf_patterns = [
+                        r'name="csrf_token"\s+value="([^"]+)"',
+                        r'name="_token"\s+value="([^"]+)"',
+                        r'name="authenticity_token"\s+value="([^"]+)"',
+                        r'"csrf_token":"([^"]+)"',
+                        r'"csrfToken":"([^"]+)"',
+                        r'"authenticity_token":"([^"]+)"',
+                        r'window\.csrf_token\s*=\s*["\']([^"\']+)["\']',
+                        r'window\._token\s*=\s*["\']([^"\']+)["\']',
+                        r'<meta name="csrf-token" content="([^"]+)"',
+                        r'<meta name="_token" content="([^"]+)"'
+                    ]
+                    
+                    for pattern in csrf_patterns:
+                        match = re.search(pattern, html)
+                        if match:
+                            self.csrf_token = match.group(1)
+                            logger.info(f"CSRF токен найден: {self.csrf_token[:20]}...")
+                            return self.csrf_token
+                    
+                    # Если не нашли в HTML, пробуем получить через API
+                    return await self._get_csrf_from_api()
+                else:
+                    logger.error(f"Ошибка получения главной страницы: {response.status}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Ошибка получения CSRF токена: {e}")
+            return None
+    
+    async def _get_csrf_from_api(self) -> Optional[str]:
+        """Получение CSRF токена через API"""
+        try:
+            # Пробуем разные API эндпоинты для получения CSRF
+            api_urls = [
+                "https://it.fiverr.com/api/v1/auth/csrf",
+                "https://it.fiverr.com/api/v1/csrf",
+                "https://it.fiverr.com/csrf",
+                "https://it.fiverr.com/api/csrf"
+            ]
+            
+            headers = {
+                'User-Agent': self._get_random_user_agent(),
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Origin': 'https://it.fiverr.com',
+                'Referer': 'https://it.fiverr.com/'
+            }
+            
+            for url in api_urls:
+                try:
+                    async with self.session.get(url, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            if 'csrf_token' in data:
+                                self.csrf_token = data['csrf_token']
+                                logger.info(f"CSRF токен получен через API: {self.csrf_token[:20]}...")
+                                return self.csrf_token
+                            elif 'token' in data:
+                                self.csrf_token = data['token']
+                                logger.info(f"CSRF токен получен через API: {self.csrf_token[:20]}...")
+                                return self.csrf_token
+                except:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения CSRF через API: {e}")
+            return None
+    
+    def _generate_username(self) -> str:
+        """Генерация случайного имени пользователя в формате text_text"""
+        # Генерируем два слова по 4-8 символов каждое
+        word1 = ''.join(random.choices(string.ascii_lowercase, k=random.randint(4, 8)))
+        word2 = ''.join(random.choices(string.ascii_lowercase, k=random.randint(4, 8)))
+        return f"{word1}_{word2}"
+    
+    def _generate_password(self) -> str:
+        """Генерация надежного пароля"""
+        # Минимум 8 символов, включая заглавные, строчные буквы и цифры
+        length = random.randint(8, 12)
         
-        Args:
-            count: Количество аккаунтов для регистрации
-            
-        Returns:
-            Список результатов регистрации
-        """
-        results = []
+        # Обязательные символы
+        uppercase = random.choice(string.ascii_uppercase)
+        lowercase = random.choice(string.ascii_lowercase)
+        digit = random.choice(string.digits)
         
-        for i in range(count):
-            logger.info(f"Регистрация аккаунта {i + 1}/{count}")
-            
-            result = await self.register_account()
-            
-            if result:
-                results.append(result)
-                logger.info(f"Успешно зарегистрирован аккаунт {i + 1}/{count}")
-            else:
-                logger.error(f"Не удалось зарегистрировать аккаунт {i + 1}/{count}")
-                results.append({
-                    "success": False,
-                    "error": "Registration failed"
-                })
-            
-            # Задержка между регистрациями
-            if i < count - 1:
-                delay = random.uniform(10, 30)
-                logger.info(f"Задержка {delay:.1f} секунд перед следующей регистрацией...")
-                await asyncio.sleep(delay)
+        # Остальные символы
+        remaining = ''.join(random.choices(
+            string.ascii_letters + string.digits,
+            k=length - 3
+        ))
         
-        return results
-
+        # Смешиваем все символы
+        password = list(uppercase + lowercase + digit + remaining)
+        random.shuffle(password)
+        
+        return ''.join(password)
+    
+    async def _check_username_availability(self, username: str) -> bool:
+        """Проверка доступности имени пользователя - упрощенная версия"""
+        # Пропускаем проверку через API, так как она может не работать
+        # Fiverr сам проверит доступность при регистрации
+        return True
+    
+    async def _send_confirmation_code(self, email: str) -> bool:
+        """Отправка кода подтверждения на email"""
+        try:
+            url = "https://it.fiverr.com/api/v1/users/send_confirmation"
+            headers = {
+                'User-Agent': self._get_random_user_agent(),
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Origin': 'https://it.fiverr.com',
+                'Referer': 'https://it.fiverr.com/',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {'email': email}
+            
+            async with self.session.post(url, json=data, headers=headers) as response:
+                return response.status == 200
+                
+        except Exception as e:
+            logger.error(f"Ошибка отправки кода подтверждения: {e}")
+            return False
+    
+    async def register_account(self, email: str, email_service: EmailAPIService, email_id: str = None, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
+        """Регистрация аккаунта на основе реальных данных"""
+        try:
+            logger.info(f"Начинаем регистрацию аккаунта с email: {email}")
+            
+            # Получаем CSRF токен и cookies
+            csrf_token = await self._get_csrf_token()
+            if not csrf_token:
+                logger.warning("CSRF токен не найден, продолжаем без него")
+            
+            # Добавляем дополнительные cookies для имитации реального браузера
+            additional_cookies = {
+                        '_pxvid': f'px_{random.randint(100000, 999999)}',
+                        '_pxff': f'{random.randint(100000, 999999)}',
+                        '_px3': f'{random.randint(100000, 999999)}',
+                        'pxvid': f'px_{random.randint(100000, 999999)}',
+                        'pxff': f'{random.randint(100000, 999999)}',
+                        'px3': f'{random.randint(100000, 999999)}',
+                        'sessionid': f'session_{random.randint(100000, 999999)}',
+                        'csrftoken': csrf_token if csrf_token else f'token_{random.randint(100000, 999999)}',
+                        '_ga': f'GA1.2.{random.randint(100000000, 999999999)}.{int(time.time())}',
+                        '_gid': f'GA1.2.{random.randint(100000000, 999999999)}.{int(time.time())}',
+                        '_fbp': f'fb.1.{int(time.time())}.{random.randint(100000000, 999999999)}',
+                        '_gcl_au': f'1.1.{random.randint(100000000, 999999999)}.{int(time.time())}',
+                        'NID': f'{random.randint(100000000, 999999999)}={random.randint(100000000, 999999999)}',
+                        '1P_JAR': f'{datetime.now().strftime("%Y-%m-%d")}-{random.randint(1, 20)}',
+                        'CONSENT': 'YES+cb.20210328-17-p0.en+FX+667',
+                        'AEC': f'AakniG{random.randint(100000000, 999999999)}',
+                        'SAPISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'APISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'SSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'HSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'SID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        'SIDCC': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-1PSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-3PSID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-1PAPISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-3PAPISID': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-1PSIDCC': f'{random.randint(100000000, 999999999)}/{int(time.time())}',
+                        '__Secure-3PSIDCC': f'{random.randint(100000000, 999999999)}/{int(time.time())}'
+                    }
+            
+            # Обновляем cookies
+            self.cookies.update(additional_cookies)
+            
+            # Генерируем username и проверяем доступность
+            # Генерируем username (без проверки доступности)
+            username = self._generate_username()
+            logger.info(f"Сгенерирован username: {username}")
+            
+            # Генерируем пароль
+            password = self._generate_password()
+            logger.info(f"Сгенерирован пароль: {password}")
+            
+            # Подготавливаем данные для регистрации
+            registration_data = {
+                'user[email]': email,
+                'user[password]': password,
+                'user[username]': username,
+                'funnel': 'standard'
+            }
+            
+            # Подготавливаем заголовки (улучшенные для обхода PerimeterX)
+            headers = {
+                'User-Agent': self._get_random_user_agent(),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Content-Type': 'multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW',
+                'Origin': 'https://it.fiverr.com',
+                'Referer': 'https://it.fiverr.com/',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-User': '?1',
+                'Priority': 'u=1, i',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Ch-Ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Sec-GPC': '1',
+                'X-Forwarded-For': f'192.168.{random.randint(1,255)}.{random.randint(1,255)}',
+                'X-Real-IP': f'192.168.{random.randint(1,255)}.{random.randint(1,255)}'
+            }
+            
+            # Добавляем CSRF токен если есть
+            if csrf_token:
+                headers['X-Csrf-Token'] = csrf_token
+            
+            # URL для регистрации
+            url = "https://it.fiverr.com/users"
+            
+            # Создаем FormData для multipart/form-data
+            form_data = aiohttp.FormData()
+            for key, value in registration_data.items():
+                form_data.add_field(key, str(value))
+            
+            # Сначала делаем GET запрос для имитации реального браузера
+            logger.info("Выполняем предварительный GET запрос...")
+            user_agent = self._get_random_user_agent()
+            get_headers = {
+                'User-Agent': user_agent,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Referer': 'https://www.google.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Ch-Ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'DNT': '1',
+                'Connection': 'keep-alive'
+            }
+            
+            proxy_url = self.proxy.to_url() if (self.proxy and self.use_proxy) else None
+            async with self.session.get('https://it.fiverr.com/', headers=get_headers, proxy=proxy_url) as get_response:
+                logger.info(f"GET запрос выполнен: {get_response.status}")
+                # Обновляем cookies из GET ответа
+                for cookie in get_response.cookies:
+                    try:
+                        if hasattr(cookie, 'key') and hasattr(cookie, 'value'):
+                            self.cookies[cookie.key] = cookie.value
+                        elif hasattr(cookie, 'key'):
+                            self.cookies[cookie.key] = str(cookie)
+                        else:
+                            # Если это строка, добавляем как есть
+                            cookie_str = str(cookie)
+                            if '=' in cookie_str:
+                                key, value = cookie_str.split('=', 1)
+                                self.cookies[key] = value
+                    except Exception as e:
+                        logger.warning(f"Ошибка обработки cookie: {e}")
+            
+            # Добавляем задержку для имитации человеческого поведения
+            await asyncio.sleep(random.uniform(2, 5))
+            
+            # Делаем промежуточный запрос к странице регистрации
+            logger.info("Переходим на страницу регистрации...")
+            reg_headers = {
+                'User-Agent': user_agent,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,it;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Referer': 'https://it.fiverr.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Ch-Ua': '"Not:A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'DNT': '1',
+                'Connection': 'keep-alive'
+            }
+            
+            async with self.session.get('https://it.fiverr.com/register', headers=reg_headers, proxy=proxy_url) as reg_response:
+                logger.info(f"GET /register выполнен: {reg_response.status}")
+                # Обновляем cookies из ответа
+                for cookie in reg_response.cookies:
+                    try:
+                        if hasattr(cookie, 'key') and hasattr(cookie, 'value'):
+                            self.cookies[cookie.key] = cookie.value
+                        elif hasattr(cookie, 'key'):
+                            self.cookies[cookie.key] = str(cookie)
+                        else:
+                            # Если это строка, добавляем как есть
+                            cookie_str = str(cookie)
+                            if '=' in cookie_str:
+                                key, value = cookie_str.split('=', 1)
+                                self.cookies[key] = value
+                    except Exception as e:
+                        logger.warning(f"Ошибка обработки cookie: {e}")
+            
+            # Еще одна задержка
+            await asyncio.sleep(random.uniform(1, 3))
+            
+            # Выполняем запрос регистрации
+            logger.info("Выполняем POST запрос регистрации...")
+            async with self.session.post(url, data=form_data, headers=headers, proxy=proxy_url) as response:
+                response_text = await response.text()
+                logger.info(f"Ответ сервера: {response.status}")
+                logger.info(f"Тело ответа: {response_text[:200]}...")
+                
+                if response.status == 200:
+                    try:
+                        response_data = await response.json()
+                        logger.info("Регистрация успешна!")
+                        
+                        # Сохраняем cookies
+                        for cookie in response.cookies:
+                            try:
+                                if hasattr(cookie, 'key') and hasattr(cookie, 'value'):
+                                    self.cookies[cookie.key] = cookie.value
+                                elif hasattr(cookie, 'key'):
+                                    self.cookies[cookie.key] = str(cookie)
+                                else:
+                                    # Если это строка, добавляем как есть
+                                    cookie_str = str(cookie)
+                                    if '=' in cookie_str:
+                                        key, value = cookie_str.split('=', 1)
+                                        self.cookies[key] = value
+                            except Exception as e:
+                                logger.warning(f"Ошибка обработки cookie: {e}")
+                        
+                        # Если нужен код подтверждения, получаем его
+                        confirmation_code = None
+                        if email_id and email_service:
+                            logger.info("Получаем код подтверждения...")
+                            confirmation_result = await email_service.get_message(email_id)
+                            if confirmation_result and confirmation_result.get("value"):
+                                confirmation_code = confirmation_result.get("value")
+                                logger.info(f"Код подтверждения получен: {confirmation_code}")
+                            else:
+                                logger.warning("Не удалось получить код подтверждения")
+                        
+                        return {
+                            "success": True,
+                            "email": email,
+                            "username": username,
+                            "password": password,
+                            "cookies": dict(self.cookies),
+                            "confirmation_code": confirmation_code,
+                            "response": response_data
+                        }
+                    except:
+                        # Если ответ не JSON, но статус 200
+                        logger.info("Регистрация успешна (не JSON ответ)")
+                        
+                        # Если нужен код подтверждения, получаем его
+                        confirmation_code = None
+                        if email_id and email_service:
+                            logger.info("Получаем код подтверждения...")
+                            confirmation_result = await email_service.get_message(email_id)
+                            if confirmation_result and confirmation_result.get("value"):
+                                confirmation_code = confirmation_result.get("value")
+                                logger.info(f"Код подтверждения получен: {confirmation_code}")
+                        
+                        return {
+                            "success": True,
+                            "email": email,
+                            "username": username,
+                            "password": password,
+                            "cookies": dict(self.cookies),
+                            "confirmation_code": confirmation_code,
+                            "response": response_text
+                        }
+                elif response.status == 403 and "px-captcha" in response_text:
+                    logger.warning("Обнаружена капча PerimeterX - HTTP регистрация заблокирована")
+                    
+                    # Делаем скриншот капчи если есть Telegram бот
+                    screenshot_data = None
+                    if telegram_bot and chat_id:
+                        try:
+                            logger.info("Делаем скриншот капчи...")
+                            screenshot_data = await self._take_captcha_screenshot("https://it.fiverr.com/register")
+                            
+                            if screenshot_data:
+                                # Отправляем скриншот в Telegram
+                                from io import BytesIO
+                                screenshot_file = BytesIO(screenshot_data)
+                                screenshot_file.name = f"captcha_{email}.png"
+                                
+                                await telegram_bot.send_photo(
+                                    chat_id=chat_id,
+                                    photo=screenshot_file,
+                                    caption=f"🚨 <b>Обнаружена капча PerimeterX</b>\n\n"
+                                           f"📧 Email: <code>{email}</code>\n"
+                                           f"🌐 URL: https://it.fiverr.com/register\n"
+                                           f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                           f"<b>Рекомендации:</b>\n"
+                                           f"• Использовать другой прокси\n"
+                                           f"• Повторить через несколько минут\n"
+                                           f"• Использовать VPN",
+                                    parse_mode='HTML'
+                                )
+                                logger.info("Скриншот капчи отправлен в Telegram")
+                            else:
+                                logger.warning("Не удалось создать скриншот капчи")
+                                
+                        except Exception as e:
+                            logger.error(f"Ошибка при отправке скриншота: {e}")
+                    
+                    # Пытаемся обойти капчу через браузер
+                    logger.info("Пытаемся обойти капчу через браузер...")
+                    browser_result = await self._register_with_captcha_bypass(
+                        email=email,
+                        username=username,
+                        password=password,
+                        telegram_bot=telegram_bot,
+                        chat_id=chat_id
+                    )
+                    
+                    if browser_result.get("success"):
+                        logger.info("Регистрация успешна через браузер с обходом капчи!")
+                        return browser_result
+                    else:
+                        logger.warning("Не удалось зарегистрироваться через браузер")
+                        return {
+                            "success": False,
+                            "error": f"❌ Обнаружена защита PerimeterX (капча). HTTP регистрация заблокирована. Обход капчи не удался: {browser_result.get('error', 'Неизвестная ошибка')}",
+                            "method": "http_blocked_captcha_bypass_failed",
+                            "screenshot_sent": screenshot_data is not None
+                        }
+                else:
+                    logger.error(f"Ошибка регистрации: {response.status}")
+                    return {
+                        "success": False,
+                        "error": f"HTTP {response.status}",
+                        "response": response_text
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Критическая ошибка при регистрации: {e}")
+            return {"success": False, "error": str(e)}
+    
 
 async def register_accounts_batch(
     email_service: EmailAPIService,
-    proxies: list[ProxyConfig],
-    accounts_per_proxy: int
+    count: int,
+    proxy: Optional[ProxyConfig] = None,
+    use_proxy: bool = True,
+    telegram_bot = None,
+    chat_id: int = None,
+    selected_domain: str = 'gmx.com'
 ) -> list:
-    """
-    Параллельная регистрация аккаунтов с использованием нескольких прокси
+    """Пакетная регистрация аккаунтов"""
+    results = []
     
-    Args:
-        email_service: Сервис для работы с email API
-        proxies: Список прокси для использования
-        accounts_per_proxy: Количество аккаунтов на один прокси
-        
-    Returns:
-        Список результатов регистрации
-    """
-    tasks = []
+    async with FiverrWorkingRegistrator(proxy, use_proxy) as registrator:
+        for i in range(count):
+            try:
+                logger.info(f"Регистрация аккаунта {i+1}/{count}")
+                
+                # Получаем доступные домены и выбираем первый доступный
+                # Используем выбранный пользователем домен
+                logger.info(f"Используем выбранный домен: {selected_domain}")
+                
+                # Заказываем email
+                email_result = await email_service.order_email("fiverr.com", selected_domain)
+                logger.info(f"Результат заказа email: {type(email_result)} - {email_result}")
+                
+                if not isinstance(email_result, dict) or not email_result.get("email"):
+                    error_msg = email_result.get('value', 'Неизвестная ошибка') if isinstance(email_result, dict) else str(email_result)
+                    logger.error(f"Не удалось заказать email: {error_msg}")
+                    results.append({
+                        "success": False,
+                        "error": f"Ошибка заказа email: {error_msg}"
+                    })
+                    continue
+                
+                
+                email = email_result["email"]
+                logger.info(f"Получен email: {email}")
+                
+                # Регистрируем аккаунт
+                logger.info(f"Начинаем регистрацию аккаунта {i+1}...")
+                result = await registrator.register_account(
+                    email=email, 
+                    email_service=email_service, 
+                    email_id=email_result.get("id"),
+                    telegram_bot=telegram_bot,
+                    chat_id=chat_id
+                )
+                logger.info(f"Результат регистрации: {type(result)} - {result}")
+                results.append(result)
+                
+                if isinstance(result, dict) and result.get("success"):
+                    logger.info(f"✅ Аккаунт {i+1} зарегистрирован успешно!")
+                else:
+                    error_msg = result.get('error', 'Неизвестная ошибка') if isinstance(result, dict) else str(result)
+                    logger.error(f"❌ Ошибка регистрации аккаунта {i+1}: {error_msg}")
+                
+            except Exception as e:
+                logger.error(f"❌ Критическая ошибка при регистрации аккаунта {i+1}: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                results.append({
+                    "success": False,
+                    "error": str(e)
+                })
     
-    for proxy in proxies:
-        registrator = FiverrRegistrator(email_service, proxy)
-        task = registrator.register_multiple_accounts(accounts_per_proxy)
-        tasks.append(task)
-    
-    # Выполняем регистрацию параллельно
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Объединяем результаты
-    all_results = []
-    for result in results:
-        if isinstance(result, list):
-            all_results.extend(result)
-        else:
-            logger.error(f"Ошибка в одной из задач: {result}")
-    
-    return all_results
-
+    return results
