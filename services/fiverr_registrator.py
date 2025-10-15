@@ -14,16 +14,42 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from io import BytesIO
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
-import undetected_chromedriver as uc
-
+from playwright.async_api import async_playwright
 from utils.logger import logger
+
+# ПРОФЕССИОНАЛЬНЫЕ СТЕЛС НАСТРОЙКИ
+ITALIAN_USER_AGENTS = [
+    # Chrome на Windows (самый популярный)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    
+    # Firefox на Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    
+    # Edge на Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+    
+    # Chrome на Mac (популярный в Италии)
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    
+    # Safari на Mac
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+    
+    # Chrome на Linux
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+]
+
+SCREEN_RESOLUTIONS = [
+    {"width": 1920, "height": 1080},  # Full HD - самый популярный
+    {"width": 1366, "height": 768},   # Ноутбуки
+    {"width": 1536, "height": 864},   # Ноутбуки высокого разрешения
+    {"width": 2560, "height": 1440},  # 2K мониторы
+    {"width": 1440, "height": 900},   # MacBook
+    {"width": 1280, "height": 720},   # HD
+]
 from services.proxy_manager import ProxyConfig
 from services.email_api import EmailAPIService
 
