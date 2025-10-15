@@ -10,12 +10,26 @@ import random
 import string
 import re
 import time
+import io
+import base64
 from datetime import datetime
 from typing import Optional, Dict, Any
 import logging
 logger = logging.getLogger(__name__)
 from services.email_api import EmailAPIService
 from services.proxy_manager import ProxyConfig
+
+# Импорты для Selenium (только для скриншотов)
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    logger.warning("Selenium не установлен - скриншоты недоступны")
 
 class FiverrWorkingRegistrator:
     def __init__(self, proxy: Optional[ProxyConfig] = None, use_proxy: bool = True):
@@ -47,6 +61,68 @@ class FiverrWorkingRegistrator:
     def _get_random_user_agent(self) -> str:
         """Получить случайный User-Agent"""
         return random.choice(self.user_agents)
+    
+    async def _take_captcha_screenshot(self, url: str = "https://it.fiverr.com/") -> Optional[bytes]:
+        """Сделать скриншот страницы с капчей"""
+        if not SELENIUM_AVAILABLE:
+            logger.warning("Selenium недоступен - скриншот не может быть сделан")
+            return None
+        
+        driver = None
+        try:
+            logger.info("Запускаем браузер для скриншота капчи...")
+            
+            # Настройки Chrome
+            options = Options()
+            options.add_argument('--headless')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            # Добавляем прокси если есть
+            if self.proxy and self.use_proxy:
+                proxy_url = f"http://{self.proxy.username}:{self.proxy.password}@{self.proxy.host}:{self.proxy.port}"
+                options.add_argument(f'--proxy-server={proxy_url}')
+            
+            # Случайный User-Agent
+            user_agent = self._get_random_user_agent()
+            options.add_argument(f'--user-agent={user_agent}')
+            
+            # Запускаем браузер
+            driver = webdriver.Chrome(options=options)
+            
+            # Убираем признаки автоматизации
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": user_agent})
+            
+            # Переходим на страницу
+            logger.info(f"Переходим на {url}...")
+            driver.get(url)
+            
+            # Ждем загрузки
+            await asyncio.sleep(3)
+            
+            # Делаем скриншот
+            logger.info("Делаем скриншот...")
+            screenshot = driver.get_screenshot_as_png()
+            
+            logger.info(f"Скриншот сделан, размер: {len(screenshot)} байт")
+            return screenshot
+            
+        except Exception as e:
+            logger.error(f"Ошибка при создании скриншота: {e}")
+            return None
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                    logger.info("Браузер закрыт")
+                except:
+                    pass
         
     async def __aenter__(self):
         """Асинхронный контекстный менеджер - вход"""
@@ -222,7 +298,7 @@ class FiverrWorkingRegistrator:
             logger.error(f"Ошибка отправки кода подтверждения: {e}")
             return False
     
-    async def register_account(self, email: str, email_service: EmailAPIService, email_id: str = None) -> Dict[str, Any]:
+    async def register_account(self, email: str, email_service: EmailAPIService, email_id: str = None, telegram_bot = None, chat_id: int = None) -> Dict[str, Any]:
         """Регистрация аккаунта на основе реальных данных"""
         try:
             logger.info(f"Начинаем регистрацию аккаунта с email: {email}")
@@ -480,10 +556,45 @@ class FiverrWorkingRegistrator:
                         }
                 elif response.status == 403 and "px-captcha" in response_text:
                     logger.warning("Обнаружена капча PerimeterX - HTTP регистрация заблокирована")
+                    
+                    # Делаем скриншот капчи если есть Telegram бот
+                    screenshot_data = None
+                    if telegram_bot and chat_id:
+                        try:
+                            logger.info("Делаем скриншот капчи...")
+                            screenshot_data = await self._take_captcha_screenshot("https://it.fiverr.com/register")
+                            
+                            if screenshot_data:
+                                # Отправляем скриншот в Telegram
+                                from io import BytesIO
+                                screenshot_file = BytesIO(screenshot_data)
+                                screenshot_file.name = f"captcha_{email}.png"
+                                
+                                await telegram_bot.send_photo(
+                                    chat_id=chat_id,
+                                    photo=screenshot_file,
+                                    caption=f"🚨 <b>Обнаружена капча PerimeterX</b>\n\n"
+                                           f"📧 Email: <code>{email}</code>\n"
+                                           f"🌐 URL: https://it.fiverr.com/register\n"
+                                           f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                           f"<b>Рекомендации:</b>\n"
+                                           f"• Использовать другой прокси\n"
+                                           f"• Повторить через несколько минут\n"
+                                           f"• Использовать VPN",
+                                    parse_mode='HTML'
+                                )
+                                logger.info("Скриншот капчи отправлен в Telegram")
+                            else:
+                                logger.warning("Не удалось создать скриншот капчи")
+                                
+                        except Exception as e:
+                            logger.error(f"Ошибка при отправке скриншота: {e}")
+                    
                     return {
                         "success": False,
                         "error": "❌ Обнаружена защита PerimeterX (капча). HTTP регистрация заблокирована. Попробуйте:\n• Использовать другой прокси\n• Повторить через несколько минут\n• Использовать VPN",
-                        "method": "http_blocked"
+                        "method": "http_blocked",
+                        "screenshot_sent": screenshot_data is not None
                     }
                 else:
                     logger.error(f"Ошибка регистрации: {response.status}")
@@ -502,7 +613,9 @@ async def register_accounts_batch(
     email_service: EmailAPIService,
     count: int,
     proxy: Optional[ProxyConfig] = None,
-    use_proxy: bool = True
+    use_proxy: bool = True,
+    telegram_bot = None,
+    chat_id: int = None
 ) -> list:
     """Пакетная регистрация аккаунтов"""
     results = []
@@ -558,7 +671,13 @@ async def register_accounts_batch(
                 
                 # Регистрируем аккаунт
                 logger.info(f"Начинаем регистрацию аккаунта {i+1}...")
-                result = await registrator.register_account(email, email_service, email_result.get("id"))
+                result = await registrator.register_account(
+                    email=email, 
+                    email_service=email_service, 
+                    email_id=email_result.get("id"),
+                    telegram_bot=telegram_bot,
+                    chat_id=chat_id
+                )
                 logger.info(f"Результат регистрации: {type(result)} - {result}")
                 results.append(result)
                 

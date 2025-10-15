@@ -378,7 +378,9 @@ async def run_registration_task_simple(
                 email_service=email_service,
                 count=account_count,
                 proxy=proxy_config,
-                use_proxy=use_proxy
+                use_proxy=use_proxy,
+                telegram_bot=update.effective_chat.bot,
+                chat_id=update.effective_chat.id
             )
             
             successful = 0
