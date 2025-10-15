@@ -8,7 +8,7 @@ import time
 import json
 import os
 import traceback
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -653,3 +653,13 @@ class FiverrRegistrator:
                 logger.error(f"❌ Не удалось зарегистрировать аккаунт {i + 1}")
         
         return results
+
+
+async def register_accounts_batch(
+    email_service: EmailAPIService,
+    count: int,
+    proxy: Optional[ProxyConfig] = None
+) -> List[Dict[str, Any]]:
+    """Регистрация нескольких аккаунтов в пакетном режиме"""
+    registrator = FiverrRegistrator(email_service, proxy)
+    return await registrator.register_multiple_accounts(count)
