@@ -603,113 +603,72 @@ class FiverrRegistrator:
     async def _register_with_captcha_bypass(self, email: str, username: str, password: str, telegram_bot=None, chat_id: int = None) -> Dict[str, Any]:
         """Регистрация с обходом капчи через PLAYWRIGHT + BRIGHTDATA"""
         try:
-            # Сначала пробуем обойти капчу через BrightData
+            # ТОЛЬКО BrightData для обхода капчи - БЕЗ FALLBACK!
             if self.use_brightdata and self.brightdata_service:
-                logger.info("🚀 Пробуем обойти капчу через BrightData...")
+                logger.info("🚀 Обходим капчу через BrightData - ПРОБУЕМ ДО ПОБЕДНОГО!")
                 
-                # Проверяем обход капчи
-                captcha_bypassed = await self.brightdata_service.check_captcha_bypass("https://it.fiverr.com/")
+                max_attempts = 10  # Максимум 10 попыток
+                attempt = 0
                 
-                if captcha_bypassed:
-                    logger.info("✅ Капча обойдена через BrightData! Используем разблокированную страницу...")
+                while attempt < max_attempts:
+                    attempt += 1
+                    logger.info(f"🔄 Попытка {attempt}/{max_attempts} обхода капчи через BrightData...")
                     
-                    # Получаем разблокированную страницу
-                    unlocked_html = await self.brightdata_service.unlock_fiverr_page("https://it.fiverr.com/")
+                    # Проверяем обход капчи
+                    captcha_bypassed = await self.brightdata_service.check_captcha_bypass("https://it.fiverr.com/")
                     
-                    if unlocked_html:
-                        # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: убеждаемся что капча действительно обойдена
-                        if "px-captcha" not in unlocked_html.lower() and "PRESS" not in unlocked_html.upper():
-                            logger.info("✅ Подтверждено: капча полностью обойдена через BrightData!")
-                            
-                            # Создаем браузер и загружаем разблокированную страницу
-                            if not await self._create_stealth_browser():
-                                return {
-                                    "success": False,
-                                    "error": "Не удалось создать браузер с стелс настройками"
-                                }
-                            
-                            # Загружаем разблокированную HTML страницу
-                            await self.page.set_content(unlocked_html)
-                            logger.info("✅ Разблокированная страница загружена в браузер")
-                            
-                            # Скриншот разблокированной страницы
-                            await self._take_step_screenshot("Страница разблокирована через BrightData", telegram_bot, chat_id, email)
-                            
-                            # Пропускаем обход капчи и переходим к регистрации
-                            return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+                    if captcha_bypassed:
+                        logger.info("✅ Капча обойдена через BrightData! Получаем разблокированную страницу...")
+                        
+                        # Получаем разблокированную страницу
+                        unlocked_html = await self.brightdata_service.unlock_fiverr_page("https://it.fiverr.com/")
+                        
+                        if unlocked_html:
+                            # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: убеждаемся что капча действительно обойдена
+                            if "px-captcha" not in unlocked_html.lower() and "PRESS" not in unlocked_html.upper():
+                                logger.info("✅ Подтверждено: капча полностью обойдена через BrightData!")
+                                
+                                # Создаем браузер и загружаем разблокированную страницу
+                                if not await self._create_stealth_browser():
+                                    return {
+                                        "success": False,
+                                        "error": "Не удалось создать браузер с стелс настройками"
+                                    }
+                                
+                                # Загружаем разблокированную HTML страницу
+                                await self.page.set_content(unlocked_html)
+                                logger.info("✅ Разблокированная страница загружена в браузер")
+                                
+                                # Скриншот разблокированной страницы
+                                await self._take_step_screenshot("Страница разблокирована через BrightData", telegram_bot, chat_id, email)
+                                
+                                # Пропускаем обход капчи и переходим к регистрации
+                                return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+                            else:
+                                logger.warning(f"⚠️ Попытка {attempt}: BrightData разблокировал страницу, но капча все еще присутствует. Пробуем еще раз...")
+                                await asyncio.sleep(5)  # Пауза между попытками
+                                continue
                         else:
-                            logger.warning("⚠️ BrightData разблокировал страницу, но капча все еще присутствует. Пробуем обычный способ...")
+                            logger.warning(f"⚠️ Попытка {attempt}: Не удалось получить разблокированную страницу. Пробуем еще раз...")
+                            await asyncio.sleep(5)  # Пауза между попытками
+                            continue
                     else:
-                        logger.warning("⚠️ Не удалось получить разблокированную страницу, пробуем обычный способ...")
-                else:
-                    logger.warning("⚠️ BrightData не смог обойти капчу, пробуем обычный способ...")
-            
-            # Обычный способ через браузер
-            logger.info("🌐 Используем обычный способ обхода капчи через браузер...")
-            
-            # Создаем браузер с ПРОФЕССИОНАЛЬНЫМ СТЕЛСОМ
-            if not await self._create_stealth_browser():
+                        logger.warning(f"⚠️ Попытка {attempt}: BrightData не смог обойти капчу. Пробуем еще раз...")
+                        await asyncio.sleep(5)  # Пауза между попытками
+                        continue
+                
+                # Если все попытки исчерпаны
+                logger.error(f"❌ BrightData не смог обойти капчу за {max_attempts} попыток!")
                 return {
                     "success": False,
-                    "error": "Не удалось создать браузер с стелс настройками"
+                    "error": f"BrightData не смог обойти капчу за {max_attempts} попыток. Попробуйте позже."
                 }
-            
-            # Переходим на главную страницу (где происходит регистрация)
-            logger.info("Переходим на главную страницу Fiverr...")
-            await self.page.goto("https://it.fiverr.com/", wait_until="networkidle", timeout=60000)
-            
-            # Ждем загрузки
-            await asyncio.sleep(3)
-            
-            # Скриншот главной страницы
-            await self._take_step_screenshot("Главная страница Fiverr", telegram_bot, chat_id, email)
-            
-            # УМНАЯ ПРОВЕРКА КАПЧИ
-            page_content = await self.page.content()
-            
-            # Проверяем разные типы капчи
-            captcha_detected = False
-            captcha_type = None
-            
-            if "PRESS" in page_content and "HOLD" in page_content:
-                captcha_detected = True
-                captcha_type = "PRESS_HOLD"
-                logger.info("🎯 Обнаружена капча PRESS & HOLD - используем ПРОДВИНУТЫЙ обход...")
-            elif "px-captcha" in page_content.lower():
-                captcha_detected = True
-                captcha_type = "PERIMETERX"
-                logger.info("🛡️ Обнаружена PerimeterX капча - используем СТЕЛС обход...")
-            elif "captcha" in page_content.lower():
-                captcha_detected = True
-                captcha_type = "GENERIC"
-                logger.info("🤖 Обнаружена общая капча - используем УНИВЕРСАЛЬНЫЙ обход...")
-            
-            if captcha_detected:
-                await self._take_step_screenshot(f"Обнаружена капча: {captcha_type}", telegram_bot, chat_id, email)
-                
-                # ПРОДВИНУТЫЙ ОБХОД КАПЧИ
-                if captcha_type == "PRESS_HOLD":
-                    captcha_bypassed = await self._bypass_press_hold_captcha()
-                elif captcha_type == "PERIMETERX":
-                    captcha_bypassed = await self._bypass_perimeterx_captcha()
-                else:
-                    captcha_bypassed = await self._bypass_press_hold_captcha()  # Fallback
-                
-                if not captcha_bypassed:
-                    logger.error(f"❌ Не удалось обойти капчу {captcha_type}")
-                    return {
-                        "success": False,
-                        "error": f"Не удалось обойти капчу {captcha_type}"
-                    }
-                
-                logger.info(f"✅ Капча {captcha_type} успешно обойдена!")
-                await self._take_step_screenshot(f"Капча {captcha_type} обойдена", telegram_bot, chat_id, email)
-                
-                # Ждем после обхода капчи
-                await asyncio.sleep(2)
-            
-            # Заполняем форму регистрации
-            return await self._fill_registration_form(email, username, password, telegram_bot, chat_id)
+            else:
+                logger.error("❌ BrightData не настроен! Невозможно обойти капчу без BrightData.")
+                return {
+                    "success": False,
+                    "error": "BrightData не настроен. Невозможно обойти капчу без BrightData."
+                }
             
         except Exception as e:
             logger.error(f"Критическая ошибка при регистрации: {e}")
