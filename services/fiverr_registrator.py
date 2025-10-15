@@ -294,52 +294,100 @@ class FiverrRegistrator:
             return False
     
     async def _bypass_perimeterx_advanced(self, driver) -> bool:
-        """ПРОДВИНУТЫЙ обход PerimeterX капчи"""
+        """ПРОДВИНУТЫЙ обход PerimeterX капчи - ЗАЖАТЬ И ДЕРЖАТЬ!"""
         try:
-            logger.info("🛡️ Обходим PerimeterX капчу...")
+            logger.info("🛡️ Обходим PerimeterX капчу - ЗАЖИМАЕМ И ДЕРЖИМ...")
             
             # Ждем загрузки PerimeterX
             await asyncio.sleep(3)
             
-            # Ищем элементы PerimeterX
-            px_selectors = [
-                "div[class*='px-captcha']",
-                "div[id*='px-captcha']",
-                "iframe[src*='px-captcha']",
-                "//div[contains(@class, 'px-captcha')]",
-                "//iframe[contains(@src, 'px-captcha')]"
+            # Ищем кнопку для зажатия (не просто элемент!)
+            button_selectors = [
+                "button[class*='px-captcha']",
+                "div[class*='px-captcha'] button",
+                "button[id*='px-captcha']",
+                "//button[contains(@class, 'px-captcha')]",
+                "//div[contains(@class, 'px-captcha')]//button",
+                "//button[contains(text(), 'PRESS')]",
+                "//button[contains(text(), 'HOLD')]",
+                "//*[contains(@class, 'px-captcha')]//*[contains(text(), 'PRESS')]",
+                "//*[contains(@class, 'px-captcha')]//*[contains(text(), 'HOLD')]"
             ]
             
-            for selector in px_selectors:
+            button = None
+            for selector in button_selectors:
                 try:
                     if selector.startswith("//"):
-                        element = driver.find_element(By.XPATH, selector)
+                        button = driver.find_element(By.XPATH, selector)
                     else:
-                        element = driver.find_element(By.CSS_SELECTOR, selector)
+                        button = driver.find_element(By.CSS_SELECTOR, selector)
                     
-                    if element:
-                        logger.info(f"✅ Найден PerimeterX элемент: {selector}")
-                        # Кликаем по элементу
-                        element.click()
-                        await asyncio.sleep(2)
+                    if button and button.is_displayed():
+                        logger.info(f"✅ Найдена кнопка PerimeterX: {selector}")
                         break
                 except:
                     continue
             
-            # Ждем обработки
-            await asyncio.sleep(5)
+            if not button:
+                logger.error("❌ Кнопка PerimeterX не найдена")
+                return False
             
-            # Проверяем результат
+            # ЧЕЛОВЕЧЕСКОЕ ПОВЕДЕНИЕ - ЗАЖИМАЕМ И ДЕРЖИМ!
+            logger.info("🤖 Зажимаем кнопку как человек...")
+            
+            # 1. Наводим курсор на кнопку
+            actions = ActionChains(driver)
+            actions.move_to_element(button).perform()
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            
+            # 2. Пауза перед зажатием (как человек думает)
+            await asyncio.sleep(random.uniform(0.2, 0.5))
+            
+            # 3. ЗАЖИМАЕМ И ДЕРЖИМ 7-9 СЕКУНД БЕЗ ДВИЖЕНИЙ!
+            hold_time = random.uniform(7.0, 9.0)  # 7-9 секунд
+            logger.info(f"⏱️ ЗАЖИМАЕМ кнопку {hold_time:.1f} секунд БЕЗ ДВИЖЕНИЙ...")
+            
+            # 4. ЗАЖИМАЕМ кнопку
+            actions.click_and_hold(button).perform()
+            
+            # 5. ДЕРЖИМ БЕЗ ДВИЖЕНИЙ (как просил пользователь!)
+            await asyncio.sleep(hold_time)
+            
+            # 6. ОТПУСКАЕМ кнопку
+            actions.release(button).perform()
+            logger.info("✅ Кнопка отпущена")
+            
+            # 7. Ждем обработки
+            await asyncio.sleep(random.uniform(2, 4))
+            
+            # 8. Проверяем результат
             page_source = driver.page_source
-            if "px-captcha" not in page_source.lower():
+            if "px-captcha" not in page_source.lower() and "PRESS" not in page_source:
                 logger.info("🎉 PerimeterX капча обойдена!")
                 return True
             else:
-                logger.warning("⚠️ PerimeterX капча все еще активна")
-                return False
+                logger.warning("⚠️ PerimeterX капча все еще активна, пробуем еще раз...")
+                # Пробуем еще раз
+                return await self._retry_perimeterx_bypass(driver)
                 
         except Exception as e:
             logger.error(f"❌ Ошибка в обходе PerimeterX: {e}")
+            return False
+    
+    async def _retry_perimeterx_bypass(self, driver) -> bool:
+        """Повторная попытка обхода PerimeterX"""
+        try:
+            logger.info("🔄 Повторная попытка обхода PerimeterX...")
+            
+            # Обновляем страницу
+            driver.refresh()
+            await asyncio.sleep(3)
+            
+            # Пробуем снова
+            return await self._bypass_perimeterx_advanced(driver)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка в повторной попытке PerimeterX: {e}")
             return False
     
     async def _bypass_generic_advanced(self, driver) -> bool:
