@@ -168,31 +168,10 @@ class FiverrWorkingRegistrator:
         return ''.join(password)
     
     async def _check_username_availability(self, username: str) -> bool:
-        """Проверка доступности имени пользователя"""
-        try:
-            url = "https://it.fiverr.com/api/v1/users/validate_username"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'it,it-IT;q=0.9,en-US;q=0.8,en;q=0.7',
-                'X-Requested-With': 'XMLHttpRequest',
-                'Origin': 'https://it.fiverr.com',
-                'Referer': 'https://it.fiverr.com/',
-                'Content-Type': 'application/json'
-            }
-            
-            data = {'username': username}
-            
-            async with self.session.post(url, json=data, headers=headers) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    # Если username доступен, сервер должен вернуть success: true
-                    return result.get('available', False)
-                return False
-                
-        except Exception as e:
-            logger.error(f"Ошибка проверки username: {e}")
-            return False
+        """Проверка доступности имени пользователя - упрощенная версия"""
+        # Пропускаем проверку через API, так как она может не работать
+        # Fiverr сам проверит доступность при регистрации
+        return True
     
     async def _send_confirmation_code(self, email: str) -> bool:
         """Отправка кода подтверждения на email"""
@@ -228,22 +207,9 @@ class FiverrWorkingRegistrator:
                 logger.warning("CSRF токен не найден, продолжаем без него")
             
             # Генерируем username и проверяем доступность
+            # Генерируем username (без проверки доступности)
             username = self._generate_username()
-            max_attempts = 5
-            attempts = 0
-            
-            while attempts < max_attempts:
-                if await self._check_username_availability(username):
-                    logger.info(f"Username {username} доступен")
-                    break
-                else:
-                    logger.info(f"Username {username} занят, генерируем новый")
-                    username = self._generate_username()
-                    attempts += 1
-            
-            if attempts >= max_attempts:
-                logger.warning("Не удалось найти доступный username")
-                return {"success": False, "error": "Username недоступен"}
+            logger.info(f"Сгенерирован username: {username}")
             
             # Генерируем пароль
             password = self._generate_password()
