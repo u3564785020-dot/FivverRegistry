@@ -108,7 +108,9 @@ class FiverrHTTPRegistrator:
                                 r'"csrfToken":"([^"]+)"',
                                 r'"authenticity_token":"([^"]+)"',
                                 r'window\.csrf_token\s*=\s*["\']([^"\']+)["\']',
-                                r'window\._token\s*=\s*["\']([^"\']+)["\']'
+                                r'window\._token\s*=\s*["\']([^"\']+)["\']',
+                                r'<meta name="csrf-token" content="([^"]+)"',
+                                r'<meta name="_token" content="([^"]+)"'
                             ]
                             
                             for pattern in csrf_patterns:
@@ -247,14 +249,14 @@ class FiverrHTTPRegistrator:
             if not csrf_token:
                 logger.warning("CSRF токен не найден, продолжаем без него")
             
-            # Пробуем разные эндпоинты для регистрации
+            # Пробуем разные эндпоинты для регистрации (на основе отладки)
             registration_urls = [
+                f"{self.base_url}/auth/signup",
+                f"{self.base_url}/user/register", 
+                f"{self.base_url}/register",
                 f"{self.base_url}/api/v1/auth/signup",
                 f"{self.base_url}/api/v2/auth/signup",
-                f"{self.base_url}/api/auth/signup",
-                f"{self.base_url}/auth/signup",
-                f"{self.base_url}/user/register",
-                f"{self.base_url}/register"
+                f"{self.base_url}/api/auth/signup"
             ]
             
             registration_data = {
@@ -275,7 +277,6 @@ class FiverrHTTPRegistrator:
             # Headers для регистрации
             headers = self._get_headers()
             headers.update({
-                'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-Token': csrf_token or '',
                 'Referer': f"{self.base_url}/register"
@@ -285,10 +286,14 @@ class FiverrHTTPRegistrator:
                 try:
                     logger.info(f"Пробуем регистрацию через: {url}")
                     
+                    # Пробуем JSON
+                    json_headers = headers.copy()
+                    json_headers['Content-Type'] = 'application/json'
+                    
                     async with self.session.post(
                         url, 
                         json=registration_data, 
-                        headers=headers
+                        headers=json_headers
                     ) as response:
                         
                         logger.info(f"Статус ответа: {response.status}")
@@ -326,6 +331,59 @@ class FiverrHTTPRegistrator:
                                         'cookies': dict(self.cookies),
                                         'response': response_text
                                     }
+                        
+                        # Если JSON не сработал, пробуем FORM-DATA
+                        if response.status != 200:
+                            logger.info("Пробуем FORM-DATA...")
+                            
+                            form_headers = headers.copy()
+                            form_headers['Content-Type'] = 'application/x-www-form-urlencoded'
+                            
+                            # Конвертируем в form data
+                            form_data = aiohttp.FormData()
+                            for key, value in registration_data.items():
+                                form_data.add_field(key, str(value))
+                            
+                            async with self.session.post(
+                                url,
+                                data=form_data,
+                                headers=form_headers
+                            ) as form_response:
+                                
+                                logger.info(f"FORM-DATA статус: {form_response.status}")
+                                form_response_text = await form_response.text()
+                                logger.info(f"FORM-DATA ответ: {form_response_text[:200]}...")
+                                
+                                if form_response.status == 200:
+                                    try:
+                                        form_result = await form_response.json()
+                                        if form_result.get('status') == 'success' or form_result.get('success'):
+                                            logger.info("Регистрация успешна через FORM-DATA!")
+                                            
+                                            # Сохраняем cookies
+                                            for cookie in form_response.cookies:
+                                                self.cookies[cookie.key] = cookie.value
+                                            
+                                            return {
+                                                'success': True,
+                                                'email': email,
+                                                'username': username,
+                                                'password': password,
+                                                'cookies': dict(self.cookies),
+                                                'response': form_result
+                                            }
+                                            
+                                    except json.JSONDecodeError:
+                                        if 'success' in form_response_text.lower() or 'welcome' in form_response_text.lower():
+                                            logger.info("Регистрация успешна через FORM-DATA (HTML)!")
+                                            return {
+                                                'success': True,
+                                                'email': email,
+                                                'username': username,
+                                                'password': password,
+                                                'cookies': dict(self.cookies),
+                                                'response': form_response_text
+                                            }
                         
                         elif response.status == 422:
                             # Ошибка валидации
