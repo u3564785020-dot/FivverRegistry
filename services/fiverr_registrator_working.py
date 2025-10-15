@@ -305,8 +305,8 @@ class FiverrWorkingRegistrator:
                         if email_id and email_service:
                             logger.info("Получаем код подтверждения...")
                             confirmation_result = await email_service.get_message(email_id)
-                            if confirmation_result["success"]:
-                                confirmation_code = confirmation_result.get("code")
+                            if confirmation_result and confirmation_result.get("value"):
+                                confirmation_code = confirmation_result.get("value")
                                 logger.info(f"Код подтверждения получен: {confirmation_code}")
                             else:
                                 logger.warning("Не удалось получить код подтверждения")
@@ -367,12 +367,39 @@ async def register_accounts_batch(
             try:
                 logger.info(f"Регистрация аккаунта {i+1}/{count}")
                 
+                # Получаем доступные домены и выбираем первый доступный
+                available_domains = await email_service.get_available_emails("fiverr.com")
+                if not available_domains:
+                    logger.error("Нет доступных доменов для fiverr.com")
+                    results.append({
+                        "success": False,
+                        "error": "Нет доступных доменов для fiverr.com"
+                    })
+                    continue
+                
+                # Выбираем первый доступный домен с количеством > 0
+                selected_domain = None
+                for domain, info in available_domains.items():
+                    if info.get("count", 0) > 0:
+                        selected_domain = domain
+                        break
+                
+                if not selected_domain:
+                    logger.error("Нет доступных доменов с почтами")
+                    results.append({
+                        "success": False,
+                        "error": "Нет доступных доменов с почтами"
+                    })
+                    continue
+                
+                logger.info(f"Выбран домен: {selected_domain}")
+                
                 # Заказываем email
-                email_result = await email_service.order_email("fiverr.com")
+                email_result = await email_service.order_email("fiverr.com", selected_domain)
                 logger.info(f"Результат заказа email: {type(email_result)} - {email_result}")
                 
-                if not isinstance(email_result, dict) or not email_result.get("success"):
-                    error_msg = email_result.get('error', 'Неизвестная ошибка') if isinstance(email_result, dict) else str(email_result)
+                if not isinstance(email_result, dict) or email_result.get("status") != "success":
+                    error_msg = email_result.get('value', 'Неизвестная ошибка') if isinstance(email_result, dict) else str(email_result)
                     logger.error(f"Не удалось заказать email: {error_msg}")
                     results.append({
                         "success": False,
