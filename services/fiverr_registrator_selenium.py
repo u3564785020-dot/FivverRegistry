@@ -80,6 +80,19 @@ class FiverrRegistrator:
     
     async def _init_browser(self):
         """Инициализация браузера с настройками"""
+        # Убиваем все процессы Chrome перед запуском
+        import subprocess
+        import os
+        try:
+            if os.name == 'nt':  # Windows
+                subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'], capture_output=True)
+                subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+            else:  # Linux/Mac
+                subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+                subprocess.run(['pkill', '-f', 'chromedriver'], capture_output=True)
+        except:
+            pass  # Игнорируем ошибки если процессы не найдены
+        
         # Создаем Selenium браузер
         options = Options()
         
@@ -96,22 +109,19 @@ class FiverrRegistrator:
         options.add_argument("--disable-web-security")
         options.add_argument("--disable-features=VizDisplayCompositor")
         
-        # Уникальная папка для каждого экземпляра
-        import tempfile
-        import uuid
-        import os
-        import time
-        
-        # Создаем уникальную папку с timestamp и random
-        unique_id = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
-        user_data_dir = f"/tmp/chrome_user_data_{unique_id}"
-        
-        # Создаем папку если не существует
-        os.makedirs(user_data_dir, exist_ok=True)
-        
-        options.add_argument(f"--user-data-dir={user_data_dir}")
+        # Убираем user-data-dir полностью - используем incognito режим
+        options.add_argument("--incognito")
         options.add_argument("--no-first-run")
         options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-plugins")
+        options.add_argument("--disable-images")
+        options.add_argument("--allow-running-insecure-content")
+        options.add_argument("--disable-features=TranslateUI")
+        options.add_argument("--disable-ipc-flooding-protection")
         
         # USER AGENT
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
@@ -147,6 +157,19 @@ class FiverrRegistrator:
         if self.driver:
             self.driver.quit()
             logger.info("Браузер закрыт")
+            
+            # Дополнительная очистка процессов
+            import subprocess
+            import os
+            try:
+                if os.name == 'nt':  # Windows
+                    subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'], capture_output=True)
+                    subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+                else:  # Linux/Mac
+                    subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+                    subprocess.run(['pkill', '-f', 'chromedriver'], capture_output=True)
+            except:
+                pass
     
     async def _take_screenshot(self, name: str):
         """Создание скриншота"""
