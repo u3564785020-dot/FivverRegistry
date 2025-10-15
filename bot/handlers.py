@@ -204,10 +204,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             count = int(text)
             if 1 <= count <= 50:
                 context.user_data['account_count'] = count
-                context.user_data['state'] = 'waiting_proxies'
                 
-                await update.message.reply_text(
-                    f"""
+                # Проверяем настройку прокси
+                use_proxy = context.user_data.get('use_proxy', True)
+                
+                if use_proxy:
+                    context.user_data['state'] = 'waiting_proxies'
+                    await update.message.reply_text(
+                        f"""
 ✅ Будет зарегистрировано: <b>{count}</b> аккаунт(ов)
 
 <b>Шаг 2:</b> Отправьте прокси (по одному на строку)
@@ -220,8 +224,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Количество прокси: <b>{count}</b>
 """,
-                    parse_mode=ParseMode.HTML
-                )
+                        parse_mode=ParseMode.HTML
+                    )
+                else:
+                    # Прокси отключены, сразу запускаем регистрацию
+                    context.user_data['state'] = None
+                    await update.message.reply_text(
+                        f"""
+✅ Будет зарегистрировано: <b>{count}</b> аккаунт(ов)
+❌ Прокси отключены - используем прямое подключение
+
+🚀 Начинаем регистрацию...
+""",
+                        parse_mode=ParseMode.HTML
+                    )
+                    
+                    # Запускаем регистрацию без прокси
+                    task_id = str(uuid.uuid4())
+                    await db.create_task(
+                        user_id=update.effective_user.id,
+                        task_id=task_id,
+                        account_count=count,
+                        proxies=[]
+                    )
+                    
+                    # Запускаем задачу в фоне
+                    # Передаем только необходимые данные, а не весь context
+                    asyncio.create_task(
+                        run_registration_task_simple(update, task_id, count, [], use_proxy=False)
+                    )
             else:
                 await update.message.reply_text(
                     "❌ Количество должно быть от 1 до 50. Попробуйте снова:"
@@ -318,38 +349,30 @@ ID задачи: <code>{task_id}</code>
     await db.update_task_status(task_id, "running")
     
     # Запускаем регистрацию в фоне
+    # Получаем настройку прокси из контекста пользователя
+    use_proxy = context.user_data.get('use_proxy', True)
+    
     asyncio.create_task(
-        run_registration_task(update, task_id, account_count, proxies)
+        run_registration_task_simple(update, task_id, account_count, proxies, use_proxy)
     )
 
 
-async def run_registration_task(
+async def run_registration_task_simple(
     update: Update,
     task_id: str,
     account_count: int,
-    proxies: list
+    proxies: list,
+    use_proxy: bool = True
 ):
-    """Выполнение задачи регистрации"""
+    """Упрощенная версия run_registration_task без context"""
     user_id = update.effective_user.id
     
     try:
         async with EmailAPIService() as email_service:
             # Запускаем регистрацию
-            # Берем первый прокси из списка
             proxy_config = None
             if proxies and len(proxies) > 0:
-                # proxies уже содержит объекты ProxyConfig
                 proxy_config = proxies[0]
-            
-            # Получаем настройку прокси из контекста пользователя
-            use_proxy = context.user_data.get('use_proxy', True)
-            
-            # Показываем статус прокси
-            proxy_status = "с прокси" if use_proxy else "без прокси (прямое подключение)"
-            await update.effective_chat.send_message(
-                f"🚀 Начинаем регистрацию {account_count} аккаунтов {proxy_status}...",
-                parse_mode=ParseMode.HTML
-            )
             
             results = await register_accounts_batch(
                 email_service=email_service,
@@ -358,7 +381,6 @@ async def run_registration_task(
                 use_proxy=use_proxy
             )
             
-            # Обрабатываем результаты
             successful = 0
             failed = 0
             
@@ -366,7 +388,6 @@ async def run_registration_task(
                 if isinstance(result, dict) and result.get('success'):
                     successful += 1
                     
-                    # Сохраняем аккаунт в БД
                     await db.save_account(
                         email=result['email'],
                         password=result['password'],
@@ -376,24 +397,19 @@ async def run_registration_task(
                         proxy=result.get('proxy')
                     )
                     
-                    # Создаем cookies файл
                     cookies_text = ""
                     if 'cookies' in result:
                         for name, value in result['cookies'].items():
                             cookies_text += f"{name}={value}\n"
                     
-                    # Отправляем cookies файл
                     cookies_file = io.BytesIO(cookies_text.encode('utf-8'))
                     cookies_file.name = f"cookies_{result['email']}.txt"
                     
-                    # Формируем сообщение с деталями аккаунта
                     account_details = f"""✅ <b>Аккаунт #{successful}</b>
-
 📧 Email: <code>{result['email']}</code>
 👤 Username: <code>{result.get('username', 'N/A')}</code>
 🔑 Password: <code>{result['password']}</code>"""
 
-                    # Добавляем код подтверждения если есть
                     if result.get('confirmation_code'):
                         account_details += f"\n🔐 Код подтверждения: <code>{result['confirmation_code']}</code>"
                     
@@ -420,19 +436,14 @@ async def run_registration_task(
                         error=error
                     )
             
-            # Обновляем статус задачи
             await db.update_task_status(task_id, "completed")
             
-            # Отправляем итоговый отчет
             summary_text = f"""
 📊 <b>Регистрация завершена!</b>
-
 ID задачи: <code>{task_id}</code>
-
 ✅ Успешно: {successful}
 ❌ Ошибок: {failed}
 📋 Всего: {account_count}
-
 Все cookies файлы отправлены выше.
 """
             await update.effective_chat.send_message(
@@ -441,7 +452,7 @@ ID задачи: <code>{task_id}</code>
             )
             
     except Exception as e:
-        logger.error(f"Ошибка в run_registration_task: {e}")
+        logger.error(f"Ошибка в run_registration_task_simple: {e}")
         await db.update_task_status(task_id, "failed")
         
         await update.effective_chat.send_message(
