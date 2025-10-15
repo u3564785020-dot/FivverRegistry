@@ -381,13 +381,16 @@ async def register_accounts_batch(
                 logger.info(f"Получен email: {email}")
                 
                 # Регистрируем аккаунт
+                logger.info(f"Начинаем регистрацию аккаунта {i+1}...")
                 result = await registrator.register_account(email, email_service, email_result.get("id"))
+                logger.info(f"Результат регистрации: {type(result)} - {result}")
                 results.append(result)
                 
-                if result["success"]:
+                if isinstance(result, dict) and result.get("success"):
                     logger.info(f"✅ Аккаунт {i+1} зарегистрирован успешно!")
                 else:
-                    logger.error(f"❌ Ошибка регистрации аккаунта {i+1}: {result.get('error', 'Неизвестная ошибка')}")
+                    error_msg = result.get('error', 'Неизвестная ошибка') if isinstance(result, dict) else str(result)
+                    logger.error(f"❌ Ошибка регистрации аккаунта {i+1}: {error_msg}")
                 
             except Exception as e:
                 logger.error(f"❌ Критическая ошибка при регистрации аккаунта {i+1}: {e}")
