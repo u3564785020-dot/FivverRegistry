@@ -310,7 +310,8 @@ async def run_registration_task(
             # Берем первый прокси из списка
             proxy_config = None
             if proxies and len(proxies) > 0:
-                proxy_config = ProxyConfig.from_string(proxies[0])
+                # proxies уже содержит объекты ProxyConfig
+                proxy_config = proxies[0]
             
             results = await register_accounts_batch(
                 email_service=email_service,
