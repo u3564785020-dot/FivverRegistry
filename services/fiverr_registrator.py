@@ -1079,7 +1079,7 @@ async def register_accounts_batch(
     """Пакетная регистрация аккаунтов"""
     results = []
     
-    async with FiverrWorkingRegistrator(proxy, use_proxy) as registrator:
+    async with FiverrRegistrator(proxy, use_proxy) as registrator:
         for i in range(count):
             try:
                 logger.info(f"Регистрация аккаунта {i+1}/{count}")
